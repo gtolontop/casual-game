@@ -4,7 +4,8 @@ import { useGameStore } from '../store/gameStore'
 import './UI.css'
 
 const UI: React.FC = () => {
-  const { score, combo } = useGameStore()
+  const { score, wave, xp, xpToNext, playerLevel, entities } = useGameStore()
+  const player = entities.find(e => e.type === 'player')
   
   return (
     <motion.div 
@@ -13,28 +14,45 @@ const UI: React.FC = () => {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
     >
-      <motion.div 
-        className="score"
-        animate={{ scale: [1, 1.1, 1] }}
-        transition={{ duration: 0.3 }}
-        key={score}
-      >
-        {score}
-      </motion.div>
+      <div className="ui-top">
+        <motion.div 
+          className="score"
+          animate={{ scale: [1, 1.1, 1] }}
+          transition={{ duration: 0.3 }}
+          key={score}
+        >
+          {score}
+        </motion.div>
+        
+        <div className="wave-indicator">
+          Wave {wave}
+        </div>
+      </div>
       
-      <AnimatePresence>
-        {combo > 1 && (
-          <motion.div
-            className="combo"
-            initial={{ scale: 0, y: 20 }}
-            animate={{ scale: 1, y: 0 }}
-            exit={{ scale: 0, opacity: 0 }}
-            key={combo}
-          >
-            COMBO x{combo}
-          </motion.div>
+      <div className="ui-bottom">
+        <div className="level-info">
+          <div className="level">LV {playerLevel}</div>
+          <div className="xp-bar">
+            <div 
+              className="xp-fill" 
+              style={{ width: `${(xp / xpToNext) * 100}%` }}
+            />
+            <div className="xp-text">{xp}/{xpToNext}</div>
+          </div>
+        </div>
+        
+        {player && (
+          <div className="hp-info">
+            <div className="hp-bar">
+              <div 
+                className="hp-fill" 
+                style={{ width: `${(player.hp! / player.maxHp!) * 100}%` }}
+              />
+              <div className="hp-text">{Math.ceil(player.hp!)}/{player.maxHp}</div>
+            </div>
+          </div>
         )}
-      </AnimatePresence>
+      </div>
     </motion.div>
   )
 }

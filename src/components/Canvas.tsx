@@ -1,8 +1,6 @@
 import React, { useRef, useEffect } from 'react'
-import { useGameStore, Bubble } from '../store/gameStore'
-import { checkCollision, resolveCollision, applyFriction, constrainToCanvas } from '../utils/physics'
-import { getColorForLevel } from '../utils/colors'
-import { createExplosionParticles, createAbsorbParticles, createTrailParticles } from '../utils/particles'
+import { useGameStore, Entity } from '../store/gameStore'
+import { createExplosionParticles, createAbsorbParticles } from '../utils/particles'
 import { soundManager } from '../utils/sound'
 import './Canvas.css'
 
@@ -11,9 +9,10 @@ const Canvas: React.FC = () => {
   const animationRef = useRef<number>()
   const mouseRef = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2 })
   const gameInitialized = useRef(false)
+  const lastShootTime = useRef(0)
+  const enemySpawnTime = useRef(0)
   
   const gameState = useGameStore(state => state.gameState)
-  const score = useGameStore(state => state.score)
   
   useEffect(() => {
     const canvas = canvasRef.current
@@ -30,7 +29,7 @@ const Canvas: React.FC = () => {
     resizeCanvas()
     window.addEventListener('resize', resizeCanvas)
     
-    if (gameState !== 'playing') {
+    if (gameState === 'menu' || gameState === 'gameOver' || gameState === 'levelUp') {
       gameInitialized.current = false
       ctx.fillStyle = '#0a0a0a'
       ctx.fillRect(0, 0, canvas.width, canvas.height)
@@ -39,105 +38,143 @@ const Canvas: React.FC = () => {
       }
     }
     
-    const {
-      bubbles,
-      particles,
-      addBubble,
-      removeBubble,
-      updateBubble,
-      setScore,
-      setGameState,
-      incrementCombo,
-      addParticles,
-      updateParticles,
-      triggerScreenShake,
-      updateScreenShake,
-      reset
-    } = useGameStore.getState()
+    const state = useGameStore.getState()
     
-    if (!gameInitialized.current) {
+    if (!gameInitialized.current && gameState === 'playing') {
       gameInitialized.current = true
-      reset()
+      state.reset()
       
-      const player: Bubble = {
+      const player: Entity = {
         id: 'player',
         x: canvas.width / 2,
         y: canvas.height / 2,
         vx: 0,
         vy: 0,
-        radius: 30,
-        color: getColorForLevel(0),
-        level: 0,
-        isPlayer: true
+        radius: 15,
+        color: '#00F5FF',
+        type: 'player',
+        hp: state.playerStats.maxHp,
+        maxHp: state.playerStats.maxHp
       }
       
-      addBubble(player)
+      state.addEntity(player)
+    }
+    
+    const spawnEnemy = (currentTime: number) => {
+      const state = useGameStore.getState()
+      const enemies = state.entities.filter(e => e.type === 'enemy')
       
-      for (let i = 0; i < 15; i++) {
-        const angle = (Math.PI * 2 * i) / 15
-        const distance = 200 + Math.random() * 200
-        const level = Math.floor(Math.random() * 3)
-        const bubble: Bubble = {
-          id: `bubble-${i}`,
+      const spawnDelay = Math.max(500, 2000 - state.wave * 100)
+      if (currentTime - enemySpawnTime.current > spawnDelay && enemies.length < 20 + state.wave * 2) {
+        enemySpawnTime.current = currentTime
+        
+        const angle = Math.random() * Math.PI * 2
+        const distance = 400 + Math.random() * 200
+        
+        const types = ['basic', 'fast', 'tank', 'swarm']
+        const enemyType = types[Math.floor(Math.random() * Math.min(types.length, 1 + Math.floor(state.wave / 3)))]
+        
+        let enemyStats = {
+          hp: 20,
+          speed: 1,
+          damage: 10,
+          radius: 12,
+          color: '#FF006E'
+        }
+        
+        switch(enemyType) {
+          case 'fast':
+            enemyStats = { hp: 15, speed: 2.5, damage: 5, radius: 8, color: '#FB5607' }
+            break
+          case 'tank':
+            enemyStats = { hp: 50, speed: 0.5, damage: 20, radius: 20, color: '#8338EC' }
+            break
+          case 'swarm':
+            enemyStats = { hp: 10, speed: 1.5, damage: 5, radius: 6, color: '#FFBE0B' }
+            for (let i = 0; i < 3; i++) {
+              const swarmAngle = angle + (Math.random() - 0.5)
+              state.addEntity({
+                id: `enemy-${Date.now()}-${i}`,
+                x: canvas.width / 2 + Math.cos(swarmAngle) * distance,
+                y: canvas.height / 2 + Math.sin(swarmAngle) * distance,
+                vx: 0,
+                vy: 0,
+                radius: enemyStats.radius,
+                color: enemyStats.color,
+                type: 'enemy',
+                subtype: enemyType,
+                hp: enemyStats.hp,
+                maxHp: enemyStats.hp,
+                damage: enemyStats.damage,
+                speed: enemyStats.speed
+              })
+            }
+            return
+        }
+        
+        const enemy: Entity = {
+          id: `enemy-${Date.now()}`,
           x: canvas.width / 2 + Math.cos(angle) * distance,
           y: canvas.height / 2 + Math.sin(angle) * distance,
-          vx: (Math.random() - 0.5) * 2,
-          vy: (Math.random() - 0.5) * 2,
-          radius: 15 + level * 5,
-          color: getColorForLevel(level),
-          level
+          vx: 0,
+          vy: 0,
+          radius: enemyStats.radius,
+          color: enemyStats.color,
+          type: 'enemy',
+          subtype: enemyType,
+          hp: enemyStats.hp,
+          maxHp: enemyStats.hp,
+          damage: enemyStats.damage,
+          speed: enemyStats.speed
         }
-        addBubble(bubble)
+        
+        state.addEntity(enemy)
       }
     }
     
-    let lastSpawnTime = Date.now()
-    
-    const spawnBubble = () => {
-      const currentTime = Date.now()
+    const shootProjectile = (currentTime: number, player: Entity) => {
       const state = useGameStore.getState()
+      const shootDelay = 1000 / state.playerStats.fireRate
       
-      if (state.bubbles.length < 25 && currentTime - lastSpawnTime > 1000) {
-        lastSpawnTime = currentTime
+      if (currentTime - lastShootTime.current > shootDelay) {
+        lastShootTime.current = currentTime
         
-        const side = Math.floor(Math.random() * 4)
-        let x, y, vx, vy
+        const nearestEnemy = state.entities
+          .filter(e => e.type === 'enemy')
+          .reduce((nearest: Entity | null, enemy) => {
+            if (!nearest) return enemy
+            const distToNearest = Math.hypot(player.x - nearest.x, player.y - nearest.y)
+            const distToEnemy = Math.hypot(player.x - enemy.x, player.y - enemy.y)
+            return distToEnemy < distToNearest ? enemy : nearest
+          }, null)
         
-        switch(side) {
-          case 0:
-            x = -30
-            y = Math.random() * canvas.height
-            vx = 1 + Math.random() * 2
-            vy = (Math.random() - 0.5) * 2
-            break
-          case 1:
-            x = canvas.width + 30
-            y = Math.random() * canvas.height
-            vx = -1 - Math.random() * 2
-            vy = (Math.random() - 0.5) * 2
-            break
-          case 2:
-            x = Math.random() * canvas.width
-            y = -30
-            vx = (Math.random() - 0.5) * 2
-            vy = 1 + Math.random() * 2
-            break
-          default:
-            x = Math.random() * canvas.width
-            y = canvas.height + 30
-            vx = (Math.random() - 0.5) * 2
-            vy = -1 - Math.random() * 2
+        if (nearestEnemy) {
+          const angle = Math.atan2(nearestEnemy.y - player.y, nearestEnemy.x - player.x)
+          
+          const multishot = state.powerUps.find(p => p.id === 'multishot')?.level || 0
+          const projectileCount = 1 + multishot
+          
+          for (let i = 0; i < projectileCount; i++) {
+            const spreadAngle = angle + (i - (projectileCount - 1) / 2) * 0.1
+            
+            const projectile: Entity = {
+              id: `proj-${Date.now()}-${i}`,
+              x: player.x,
+              y: player.y,
+              vx: Math.cos(spreadAngle) * state.playerStats.projectileSpeed,
+              vy: Math.sin(spreadAngle) * state.playerStats.projectileSpeed,
+              radius: 4,
+              color: '#00F5FF',
+              type: 'projectile',
+              damage: state.playerStats.damage,
+              lifetime: 60
+            }
+            
+            state.addEntity(projectile)
+          }
+          
+          soundManager.playTone(800, 0.05, 0.1)
         }
-        
-        const level = Math.floor(Math.random() * Math.min(4, Math.floor(state.score / 100) + 1))
-        const bubble: Bubble = {
-          id: `bubble-${Date.now()}`,
-          x, y, vx, vy,
-          radius: 15 + level * 5,
-          color: getColorForLevel(level),
-          level
-        }
-        state.addBubble(bubble)
       }
     }
     
@@ -158,11 +195,13 @@ const Canvas: React.FC = () => {
       const state = useGameStore.getState()
       if (state.gameState !== 'playing') return
       
-      ctx.fillStyle = 'rgba(10, 10, 10, 0.2)'
+      const currentTime = Date.now()
+      
+      ctx.fillStyle = 'rgba(10, 10, 10, 0.3)'
       ctx.fillRect(0, 0, canvas.width, canvas.height)
       
-      const currentBubbles = [...state.bubbles]
-      const player = currentBubbles.find(b => b.isPlayer)
+      const entities = [...state.entities]
+      const player = entities.find(e => e.type === 'player')
       
       if (player) {
         const dx = mouseRef.current.x - player.x
@@ -170,109 +209,146 @@ const Canvas: React.FC = () => {
         const distance = Math.sqrt(dx * dx + dy * dy)
         
         if (distance > 5) {
-          const speed = Math.min(distance / 10, 8)
+          const speed = Math.min(distance / 10, state.playerStats.moveSpeed)
           player.vx += (dx / distance) * speed * 0.2
           player.vy += (dy / distance) * speed * 0.2
         }
         
-        if (Math.abs(player.vx) > 1 || Math.abs(player.vy) > 1) {
-          const trail = createTrailParticles(player.x, player.y, player.vx, player.vy, player.color)
-          if (trail.length > 0) state.addParticles(trail)
-        }
+        player.vx *= 0.9
+        player.vy *= 0.9
+        player.x += player.vx
+        player.y += player.vy
+        
+        player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, player.x))
+        player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, player.y))
+        
+        shootProjectile(currentTime, player)
       }
       
-      spawnBubble()
+      spawnEnemy(currentTime)
       
-      currentBubbles.forEach(bubble => {
-        bubble.x += bubble.vx
-        bubble.y += bubble.vy
+      entities.forEach(entity => {
+        if (entity.type === 'enemy' && player) {
+          const dx = player.x - entity.x
+          const dy = player.y - entity.y
+          const distance = Math.sqrt(dx * dx + dy * dy)
+          
+          if (distance > 0) {
+            entity.vx = (dx / distance) * (entity.speed || 1)
+            entity.vy = (dy / distance) * (entity.speed || 1)
+          }
+          
+          entity.x += entity.vx
+          entity.y += entity.vy
+        }
         
-        applyFriction(bubble, bubble.isPlayer ? 0.92 : 0.995)
-        constrainToCanvas(bubble, canvas.width, canvas.height)
+        if (entity.type === 'projectile') {
+          entity.x += entity.vx
+          entity.y += entity.vy
+          entity.lifetime = (entity.lifetime || 0) - 1
+          
+          if (entity.lifetime <= 0 || 
+              entity.x < 0 || entity.x > canvas.width || 
+              entity.y < 0 || entity.y > canvas.height) {
+            state.removeEntity(entity.id)
+          }
+        }
         
-        if (!bubble.isPlayer && 
-            (bubble.x < -50 || bubble.x > canvas.width + 50 || 
-             bubble.y < -50 || bubble.y > canvas.height + 50)) {
-          state.removeBubble(bubble.id)
+        if (entity.type === 'xp') {
+          if (player) {
+            const dist = Math.hypot(player.x - entity.x, player.y - entity.y)
+            if (dist < state.playerStats.pickupRange) {
+              entity.vx = (player.x - entity.x) * 0.1
+              entity.vy = (player.y - entity.y) * 0.1
+            } else {
+              entity.vx *= 0.95
+              entity.vy *= 0.95
+            }
+            
+            entity.x += entity.vx
+            entity.y += entity.vy
+          }
         }
       })
       
-      for (let i = 0; i < currentBubbles.length; i++) {
-        for (let j = i + 1; j < currentBubbles.length; j++) {
-          const b1 = currentBubbles[i]
-          const b2 = currentBubbles[j]
+      for (let i = 0; i < entities.length; i++) {
+        for (let j = i + 1; j < entities.length; j++) {
+          const e1 = entities[i]
+          const e2 = entities[j]
+          const dist = Math.hypot(e1.x - e2.x, e1.y - e2.y)
           
-          if (checkCollision(b1, b2)) {
-            if (b1.isPlayer || b2.isPlayer) {
-              const player = b1.isPlayer ? b1 : b2
-              const other = b1.isPlayer ? b2 : b1
+          if (dist < e1.radius + e2.radius) {
+            if (e1.type === 'player' && e2.type === 'enemy') {
+              if (!e1.damage) {
+                e1.hp = (e1.hp || 0) - (e2.damage || 10)
+                e1.damage = 30
+                state.triggerScreenShake(10)
+                soundManager.playTone(200, 0.1, 0.3)
+                
+                if (e1.hp <= 0) {
+                  soundManager.playGameOver()
+                  state.setGameState('gameOver')
+                }
+              }
+            }
+            
+            if (e1.type === 'projectile' && e2.type === 'enemy') {
+              e2.hp = (e2.hp || 0) - (e1.damage || 10)
               
-              if (player.radius > other.radius * 1.2) {
-                const particles = createAbsorbParticles(other.x, other.y, player.x, player.y, other.color)
-                state.addParticles(particles)
+              const explosion = createExplosionParticles(e1.x, e1.y, e1.color, 10)
+              state.addParticles(explosion)
+              
+              state.removeEntity(e1.id)
+              
+              if (e2.hp <= 0) {
+                const bigExplosion = createExplosionParticles(e2.x, e2.y, e2.color, 20)
+                state.addParticles(bigExplosion)
                 
-                player.radius += other.radius * 0.2
-                state.setScore(state.score + (other.level + 1) * 10)
+                state.setScore(state.score + 10)
                 state.incrementCombo()
-                
-                soundManager.playPop(other.radius / 20)
+                soundManager.playPop()
                 state.triggerScreenShake(5)
                 
-                state.removeBubble(other.id)
-                
-                if (player.radius > 40 && player.level < 9) {
-                  player.level++
-                  player.color = getColorForLevel(player.level)
-                  player.radius = 30 + player.level * 5
-                  
-                  const explosion = createExplosionParticles(player.x, player.y, player.color, 30)
-                  state.addParticles(explosion)
-                  soundManager.playMerge(player.level)
-                  state.triggerScreenShake(10)
+                const xp: Entity = {
+                  id: `xp-${Date.now()}`,
+                  x: e2.x,
+                  y: e2.y,
+                  vx: (Math.random() - 0.5) * 2,
+                  vy: (Math.random() - 0.5) * 2,
+                  radius: 6,
+                  color: '#06FFB4',
+                  type: 'xp'
                 }
-              } else if (other.radius > player.radius * 1.5) {
-                soundManager.playGameOver()
-                state.setGameState('gameOver')
-                return
-              } else {
-                resolveCollision(b1, b2)
-                soundManager.playTone(400, 0.05, 0.1)
-              }
-            } else {
-              if (b1.level === b2.level && b1.radius === b2.radius) {
-                const newX = (b1.x + b2.x) / 2
-                const newY = (b1.y + b2.y) / 2
+                state.addEntity(xp)
                 
-                const particles = createExplosionParticles(newX, newY, b1.color, 15)
-                state.addParticles(particles)
+                state.removeEntity(e2.id)
                 
-                state.removeBubble(b1.id)
-                state.removeBubble(b2.id)
-                
-                if (b1.level < 8) {
-                  const merged: Bubble = {
-                    id: `merged-${Date.now()}`,
-                    x: newX,
-                    y: newY,
-                    vx: (b1.vx + b2.vx) / 2,
-                    vy: (b1.vy + b2.vy) / 2,
-                    radius: b1.radius + 5,
-                    level: b1.level + 1,
-                    color: getColorForLevel(b1.level + 1)
-                  }
-                  state.addBubble(merged)
-                  soundManager.playMerge(merged.level)
+                const enemies = state.entities.filter(e => e.type === 'enemy')
+                if (enemies.length === 0) {
+                  state.wave++
+                  state.triggerScreenShake(20)
+                  soundManager.playMerge(state.wave)
                 }
-              } else {
-                resolveCollision(b1, b2)
               }
+            }
+            
+            if (e1.type === 'player' && e2.type === 'xp') {
+              const particles = createAbsorbParticles(e2.x, e2.y, e1.x, e1.y, e2.color, 5)
+              state.addParticles(particles)
+              state.addXp(10)
+              soundManager.playTone(1000, 0.05, 0.2)
+              state.removeEntity(e2.id)
             }
           }
         }
       }
       
-      currentBubbles.forEach(bubble => {
-        state.updateBubble(bubble.id, bubble)
+      if (player && player.damage) {
+        player.damage--
+      }
+      
+      entities.forEach(entity => {
+        state.updateEntity(entity.id, entity)
       })
       
       state.updateParticles()
@@ -282,39 +358,48 @@ const Canvas: React.FC = () => {
         ctx.save()
         ctx.globalAlpha = particle.life
         ctx.fillStyle = particle.color
+        ctx.shadowBlur = 10
+        ctx.shadowColor = particle.color
         ctx.beginPath()
         ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2)
         ctx.fill()
         ctx.restore()
       })
       
-      currentBubbles.forEach(bubble => {
+      entities.forEach(entity => {
         ctx.save()
-        ctx.shadowColor = bubble.color
-        ctx.shadowBlur = 20
         
-        const gradient = ctx.createRadialGradient(
-          bubble.x - bubble.radius * 0.3,
-          bubble.y - bubble.radius * 0.3,
-          0,
-          bubble.x,
-          bubble.y,
-          bubble.radius
-        )
-        gradient.addColorStop(0, bubble.color)
-        gradient.addColorStop(0.7, bubble.color + 'aa')
-        gradient.addColorStop(1, bubble.color + '44')
+        if (entity.type === 'player' && entity.damage && entity.damage > 0 && Math.floor(entity.damage / 5) % 2 === 0) {
+          ctx.globalAlpha = 0.3
+        }
         
-        ctx.fillStyle = gradient
+        ctx.shadowColor = entity.color
+        ctx.shadowBlur = entity.type === 'xp' ? 30 : 20
+        ctx.fillStyle = entity.color
+        
         ctx.beginPath()
-        ctx.arc(bubble.x, bubble.y, bubble.radius, 0, Math.PI * 2)
+        ctx.arc(entity.x, entity.y, entity.radius, 0, Math.PI * 2)
         ctx.fill()
         
-        if (bubble.isPlayer) {
+        if (entity.type === 'player') {
           ctx.strokeStyle = '#fff'
           ctx.lineWidth = 2
           ctx.globalAlpha = 0.5
           ctx.stroke()
+          
+          const hpPercent = (entity.hp || 0) / (entity.maxHp || 1)
+          ctx.fillStyle = '#FF006E'
+          ctx.fillRect(entity.x - 20, entity.y - 30, 40, 4)
+          ctx.fillStyle = '#06FFB4'
+          ctx.fillRect(entity.x - 20, entity.y - 30, 40 * hpPercent, 4)
+        }
+        
+        if (entity.type === 'enemy' && entity.hp && entity.hp < entity.maxHp!) {
+          const hpPercent = entity.hp / entity.maxHp!
+          ctx.fillStyle = '#FF006E'
+          ctx.fillRect(entity.x - entity.radius, entity.y - entity.radius - 10, entity.radius * 2, 3)
+          ctx.fillStyle = '#FFBE0B'
+          ctx.fillRect(entity.x - entity.radius, entity.y - entity.radius - 10, entity.radius * 2 * hpPercent, 3)
         }
         
         ctx.restore()
