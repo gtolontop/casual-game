@@ -339,9 +339,31 @@ export const useGameStore = create<GameState>((set, get) => ({
     return {}
   }),
   
-  incrementCombo: () => set((state) => ({ combo: state.combo + 1 })),
+  incrementCombo: () => set((state) => {
+    const newKillStreak = state.killStreak + 1
+    const newComboMultiplier = 1 + Math.floor(newKillStreak / 10) * 0.5
+    const newRage = Math.min(state.playerStats.rageBar + 5, 100)
+    
+    return { 
+      combo: state.combo + 1,
+      killStreak: newKillStreak,
+      totalKills: state.totalKills + 1,
+      playerStats: {
+        ...state.playerStats,
+        comboMultiplier: newComboMultiplier,
+        rageBar: newRage
+      }
+    }
+  }),
   
-  resetCombo: () => set({ combo: 0 }),
+  resetCombo: () => set((state) => ({ 
+    combo: 0, 
+    killStreak: 0,
+    playerStats: {
+      ...state.playerStats,
+      comboMultiplier: 1
+    }
+  })),
   
   addParticles: (newParticles) => set((state) => ({ 
     particles: [...state.particles, ...newParticles] 
