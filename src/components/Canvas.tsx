@@ -368,14 +368,31 @@ const Canvas: React.FC = () => {
               }
             }
             
-            // Projectile vs Enemy
-            if ((e1.type === 'projectile' && (e2.type === 'enemy' || e2.type === 'boss')) || 
-                ((e1.type === 'enemy' || e1.type === 'boss') && e2.type === 'projectile')) {
+            // Projectile vs Enemy/Player
+            if (e1.type === 'projectile' || e2.type === 'projectile') {
               const projectile = e1.type === 'projectile' ? e1 : e2
-              const enemy = e1.type === 'enemy' || e1.type === 'boss' ? e1 : e2
+              const other = e1.type === 'projectile' ? e2 : e1
               
-              // Skip enemy projectiles hitting enemies
-              if (projectile.id.includes('enemy') || projectile.id.includes('boss')) continue
+              // Enemy projectile vs Player
+              if ((projectile.id.includes('enemy') || projectile.id.includes('boss')) && other.type === 'player') {
+                if (!other.damage) {
+                  other.hp = (other.hp || 0) - (projectile.damage || 10)
+                  other.damage = 30
+                  state.triggerScreenShake(10)
+                  soundManager.playTone(200, 0.1, 0.3)
+                  state.removeEntity(projectile.id)
+                  
+                  if (other.hp <= 0) {
+                    soundManager.playGameOver()
+                    state.setGameState('gameOver')
+                  }
+                }
+                continue
+              }
+              
+              // Player projectile vs Enemy
+              if (!(projectile.id.includes('enemy') || projectile.id.includes('boss')) && (other.type === 'enemy' || other.type === 'boss')) {
+                const enemy = other
               
               enemy.hp = (enemy.hp || 0) - (projectile.damage || 10)
               
