@@ -390,7 +390,13 @@ export const useGameStore = create<GameState>((set, get) => ({
       critDamage: 2,
       luck: 1,
       dodge: 0,
-      armor: 0
-    }
+      armor: 0,
+      dashCooldown: 3000,
+      rageBar: 0,
+      comboMultiplier: 1
+    },
+    killStreak: 0,
+    totalKills: 0,
+    dashReady: true
   })
 }))
