@@ -11,6 +11,7 @@ const Canvas: React.FC = () => {
   const gameInitialized = useRef(false)
   const lastShootTime = useRef(0)
   const enemySpawnTime = useRef(0)
+  const lastShieldTime = useRef(0)
   
   const gameState = useGameStore(state => state.gameState)
   
@@ -311,6 +312,42 @@ const Canvas: React.FC = () => {
                 state.incrementCombo()
                 soundManager.playPop()
                 state.triggerScreenShake(5)
+                
+                // Lifesteal effect
+                const lifestealLevel = state.powerUps.find(p => p.id === 'lifesteal')?.level || 0
+                if (lifestealLevel > 0 && player) {
+                  const healAmount = 2 * lifestealLevel
+                  player.hp = Math.min((player.hp || 0) + healAmount, player.maxHp || 100)
+                  const healParticle = createAbsorbParticles(enemy.x, enemy.y, player.x, player.y, '#FF006E', 3)
+                  state.addParticles(healParticle)
+                }
+                
+                // Explosive shots effect
+                const explosiveLevel = state.powerUps.find(p => p.id === 'explosive')?.level || 0
+                if (explosiveLevel > 0) {
+                  const explosionRadius = 50 + explosiveLevel * 20
+                  const explosionDamage = state.playerStats.damage * 0.5
+                  
+                  state.entities
+                    .filter(e => e.type === 'enemy' && e.id !== enemy.id)
+                    .forEach(otherEnemy => {
+                      const dist = Math.hypot(otherEnemy.x - enemy.x, otherEnemy.y - enemy.y)
+                      if (dist < explosionRadius) {
+                        otherEnemy.hp = (otherEnemy.hp || 0) - explosionDamage
+                        const dmgParticles = createExplosionParticles(otherEnemy.x, otherEnemy.y, '#FF006E', 5)
+                        state.addParticles(dmgParticles)
+                      }
+                    })
+                  
+                  ctx.save()
+                  ctx.strokeStyle = enemy.color
+                  ctx.globalAlpha = 0.3
+                  ctx.lineWidth = 3
+                  ctx.beginPath()
+                  ctx.arc(enemy.x, enemy.y, explosionRadius, 0, Math.PI * 2)
+                  ctx.stroke()
+                  ctx.restore()
+                }
                 
                 const xp: Entity = {
                   id: `xp-${Date.now()}`,
