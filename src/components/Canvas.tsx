@@ -30,9 +30,18 @@ const Canvas: React.FC = () => {
     resizeCanvas()
     window.addEventListener('resize', resizeCanvas)
     
-    if (gameState === 'menu' || gameState === 'gameOver' || gameState === 'levelUp') {
+    if (gameState === 'menu' || gameState === 'gameOver') {
       gameInitialized.current = false
       ctx.fillStyle = '#0a0a0a'
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      return () => {
+        window.removeEventListener('resize', resizeCanvas)
+      }
+    }
+    
+    if (gameState === 'levelUp') {
+      // Don't reset when leveling up, just pause the game
+      ctx.fillStyle = 'rgba(10, 10, 10, 0.5)'
       ctx.fillRect(0, 0, canvas.width, canvas.height)
       return () => {
         window.removeEventListener('resize', resizeCanvas)
@@ -43,22 +52,26 @@ const Canvas: React.FC = () => {
     
     if (!gameInitialized.current && gameState === 'playing') {
       gameInitialized.current = true
-      state.reset()
       
-      const player: Entity = {
-        id: 'player',
-        x: canvas.width / 2,
-        y: canvas.height / 2,
-        vx: 0,
-        vy: 0,
-        radius: 15,
-        color: '#00F5FF',
-        type: 'player',
-        hp: state.playerStats.maxHp,
-        maxHp: state.playerStats.maxHp
+      // Only reset if we're starting a new game (no entities)
+      if (state.entities.length === 0) {
+        state.reset()
+        
+        const player: Entity = {
+          id: 'player',
+          x: canvas.width / 2,
+          y: canvas.height / 2,
+          vx: 0,
+          vy: 0,
+          radius: 15,
+          color: '#00F5FF',
+          type: 'player',
+          hp: state.playerStats.maxHp,
+          maxHp: state.playerStats.maxHp
+        }
+        
+        state.addEntity(player)
       }
-      
-      state.addEntity(player)
     }
     
     const spawnEnemy = (currentTime: number) => {
