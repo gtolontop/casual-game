@@ -39,6 +39,7 @@ const LevelUp: React.FC = () => {
             <motion.div
               key={upgrade.id}
               className="upgrade-card"
+              data-rarity={upgrade.rarity}
               initial={{ x: -50, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               transition={{ delay: 0.3 + index * 0.1 }}
