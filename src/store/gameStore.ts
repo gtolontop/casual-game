@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export interface Bubble {
+export interface Entity {
   id: string
   x: number
   y: number
@@ -8,24 +8,57 @@ export interface Bubble {
   vy: number
   radius: number
   color: string
+  hp?: number
+  maxHp?: number
+  damage?: number
+  speed?: number
+  type: 'player' | 'enemy' | 'xp' | 'powerup' | 'projectile'
+  subtype?: string
+  lifetime?: number
+  target?: { x: number; y: number }
+}
+
+export interface PowerUp {
+  id: string
+  name: string
+  description: string
+  icon: string
   level: number
-  isPlayer?: boolean
+  maxLevel: number
 }
 
 interface GameState {
-  bubbles: Bubble[]
+  entities: Entity[]
   score: number
   highScore: number
-  gameState: 'menu' | 'playing' | 'gameOver'
-  playerSize: number
+  gameState: 'menu' | 'playing' | 'gameOver' | 'levelUp'
+  wave: number
+  xp: number
+  xpToNext: number
+  playerLevel: number
   combo: number
   particles: Particle[]
   screenShake: number
-  addBubble: (bubble: Bubble) => void
-  removeBubble: (id: string) => void
-  updateBubble: (id: string, updates: Partial<Bubble>) => void
+  powerUps: PowerUp[]
+  availableUpgrades: PowerUp[]
+  playerStats: {
+    maxHp: number
+    moveSpeed: number
+    fireRate: number
+    damage: number
+    projectileSpeed: number
+    pickupRange: number
+    critChance: number
+  }
+  
+  addEntity: (entity: Entity) => void
+  removeEntity: (id: string) => void
+  updateEntity: (id: string, updates: Partial<Entity>) => void
   setScore: (score: number) => void
-  setGameState: (state: 'menu' | 'playing' | 'gameOver') => void
+  setGameState: (state: 'menu' | 'playing' | 'gameOver' | 'levelUp') => void
+  addXp: (amount: number) => void
+  levelUp: () => void
+  selectUpgrade: (upgradeId: string) => void
   incrementCombo: () => void
   resetCombo: () => void
   addParticles: (particles: Particle[]) => void
@@ -43,39 +76,118 @@ export interface Particle {
   life: number
   size: number
   color: string
+  type?: 'damage' | 'heal' | 'xp'
 }
 
+const initialPowerUps: PowerUp[] = [
+  { id: 'damage', name: 'Damage Up', description: '+20% damage', icon: '⚔️', level: 0, maxLevel: 5 },
+  { id: 'speed', name: 'Speed Up', description: '+15% movement speed', icon: '👟', level: 0, maxLevel: 5 },
+  { id: 'hp', name: 'Max HP', description: '+25 max health', icon: '❤️', level: 0, maxLevel: 5 },
+  { id: 'firerate', name: 'Fire Rate', description: '+20% attack speed', icon: '🔥', level: 0, maxLevel: 5 },
+  { id: 'multishot', name: 'Multishot', description: 'Fire additional projectiles', icon: '💫', level: 0, maxLevel: 3 },
+  { id: 'lifesteal', name: 'Lifesteal', description: 'Heal on enemy kill', icon: '🩸', level: 0, maxLevel: 3 },
+  { id: 'explosive', name: 'Explosive Shots', description: 'Projectiles explode on impact', icon: '💥', level: 0, maxLevel: 3 },
+  { id: 'shield', name: 'Shield', description: 'Periodic damage immunity', icon: '🛡️', level: 0, maxLevel: 3 }
+]
+
 export const useGameStore = create<GameState>((set, get) => ({
-  bubbles: [],
+  entities: [],
   score: 0,
-  highScore: parseInt(localStorage.getItem('highScore') || '0'),
+  highScore: parseInt(localStorage.getItem('voidHighScore') || '0'),
   gameState: 'menu',
-  playerSize: 30,
+  wave: 1,
+  xp: 0,
+  xpToNext: 100,
+  playerLevel: 1,
   combo: 0,
   particles: [],
   screenShake: 0,
+  powerUps: [...initialPowerUps],
+  availableUpgrades: [],
+  playerStats: {
+    maxHp: 100,
+    moveSpeed: 5,
+    fireRate: 2,
+    damage: 10,
+    projectileSpeed: 8,
+    pickupRange: 50,
+    critChance: 0.1
+  },
   
-  addBubble: (bubble) => set((state) => ({ 
-    bubbles: [...state.bubbles, bubble] 
+  addEntity: (entity) => set((state) => ({ 
+    entities: [...state.entities, entity] 
   })),
   
-  removeBubble: (id) => set((state) => ({ 
-    bubbles: state.bubbles.filter(b => b.id !== id) 
+  removeEntity: (id) => set((state) => ({ 
+    entities: state.entities.filter(e => e.id !== id) 
   })),
   
-  updateBubble: (id, updates) => set((state) => ({
-    bubbles: state.bubbles.map(b => b.id === id ? { ...b, ...updates } : b)
+  updateEntity: (id, updates) => set((state) => ({
+    entities: state.entities.map(e => e.id === id ? { ...e, ...updates } : e)
   })),
   
   setScore: (score) => set((state) => {
     const newHighScore = Math.max(score, state.highScore)
     if (newHighScore > state.highScore) {
-      localStorage.setItem('highScore', newHighScore.toString())
+      localStorage.setItem('voidHighScore', newHighScore.toString())
     }
     return { score, highScore: newHighScore }
   }),
   
   setGameState: (gameState) => set({ gameState }),
+  
+  addXp: (amount) => set((state) => {
+    const newXp = state.xp + amount
+    if (newXp >= state.xpToNext) {
+      get().levelUp()
+      return { xp: newXp - state.xpToNext }
+    }
+    return { xp: newXp }
+  }),
+  
+  levelUp: () => set((state) => {
+    const availableUpgrades = state.powerUps
+      .filter(p => p.level < p.maxLevel)
+      .sort(() => Math.random() - 0.5)
+      .slice(0, 3)
+    
+    return {
+      playerLevel: state.playerLevel + 1,
+      xpToNext: state.xpToNext + 50,
+      gameState: 'levelUp',
+      availableUpgrades
+    }
+  }),
+  
+  selectUpgrade: (upgradeId) => set((state) => {
+    const upgradedPowerUps = state.powerUps.map(p => 
+      p.id === upgradeId ? { ...p, level: p.level + 1 } : p
+    )
+    
+    let newStats = { ...state.playerStats }
+    
+    switch(upgradeId) {
+      case 'damage':
+        newStats.damage *= 1.2
+        break
+      case 'speed':
+        newStats.moveSpeed *= 1.15
+        break
+      case 'hp':
+        newStats.maxHp += 25
+        break
+      case 'firerate':
+        newStats.fireRate *= 1.2
+        break
+    }
+    
+    return {
+      powerUps: upgradedPowerUps,
+      playerStats: newStats,
+      gameState: 'playing',
+      availableUpgrades: []
+    }
+  }),
   
   incrementCombo: () => set((state) => ({ combo: state.combo + 1 })),
   
@@ -87,7 +199,13 @@ export const useGameStore = create<GameState>((set, get) => ({
   
   updateParticles: () => set((state) => ({
     particles: state.particles
-      .map(p => ({ ...p, life: p.life - 0.02, x: p.x + p.vx, y: p.y + p.vy }))
+      .map(p => ({ 
+        ...p, 
+        life: p.life - 0.02, 
+        x: p.x + p.vx, 
+        y: p.y + p.vy,
+        vy: p.vy + 0.2
+      }))
       .filter(p => p.life > 0)
   })),
   
@@ -98,11 +216,25 @@ export const useGameStore = create<GameState>((set, get) => ({
   })),
   
   reset: () => set({
-    bubbles: [],
+    entities: [],
     score: 0,
+    wave: 1,
+    xp: 0,
+    xpToNext: 100,
+    playerLevel: 1,
     combo: 0,
     particles: [],
     screenShake: 0,
-    playerSize: 30
+    powerUps: [...initialPowerUps],
+    availableUpgrades: [],
+    playerStats: {
+      maxHp: 100,
+      moveSpeed: 5,
+      fireRate: 2,
+      damage: 10,
+      projectileSpeed: 8,
+      pickupRange: 50,
+      critChance: 0.1
+    }
   })
 }))
