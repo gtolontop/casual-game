@@ -42,6 +42,35 @@
   padding: 1.5rem;
   cursor: pointer;
   transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.upgrade-card[data-rarity="rare"] {
+  background: linear-gradient(135deg, rgba(58, 134, 255, 0.2), rgba(6, 255, 180, 0.2));
+  border-color: #3A86FF;
+}
+
+.upgrade-card[data-rarity="epic"] {
+  background: linear-gradient(135deg, rgba(138, 56, 236, 0.3), rgba(255, 0, 110, 0.3));
+  border-color: #8338EC;
+  animation: epicGlow 2s ease-in-out infinite;
+}
+
+.upgrade-card[data-rarity="legendary"] {
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.3), rgba(255, 140, 0, 0.3));
+  border-color: #FFD700;
+  animation: legendaryGlow 1s ease-in-out infinite;
+}
+
+@keyframes epicGlow {
+  0%, 100% { box-shadow: 0 0 20px rgba(138, 56, 236, 0.5); }
+  50% { box-shadow: 0 0 40px rgba(138, 56, 236, 0.8); }
+}
+
+@keyframes legendaryGlow {
+  0%, 100% { box-shadow: 0 0 30px rgba(255, 215, 0, 0.6); }
+  50% { box-shadow: 0 0 60px rgba(255, 215, 0, 1); }
 }
 
 .upgrade-card:hover {
