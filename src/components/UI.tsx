@@ -71,7 +71,27 @@ const UI: React.FC = () => {
         <div className="stat">DMG: {Math.round(playerStats.damage)}</div>
         <div className="stat">SPD: {playerStats.moveSpeed.toFixed(1)}</div>
         <div className="stat">RATE: {playerStats.fireRate.toFixed(1)}/s</div>
+        <div className="stat">CRIT: {(playerStats.critChance * 100).toFixed(0)}%</div>
       </div>
+      
+      <div className="weapon-display">
+        <div className="current-weapon">
+          <span className="weapon-icon">{currentWeapon.icon}</span>
+          <span className="weapon-name">{currentWeapon.name}</span>
+        </div>
+      </div>
+      
+      {boss && (
+        <div className="boss-hp-container">
+          <div className="boss-name">{boss.subtype?.toUpperCase()}</div>
+          <div className="boss-hp-bar">
+            <div 
+              className="boss-hp-fill" 
+              style={{ width: `${(boss.hp! / boss.maxHp!) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
     </motion.div>
   )
 }
