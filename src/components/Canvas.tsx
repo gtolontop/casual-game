@@ -86,13 +86,16 @@ const Canvas: React.FC = () => {
       // Check for boss spawn
       if (state.wave % 5 === 0 && enemies.length === 0 && !boss) {
         const bossType = getBossForWave(state.wave)
-        if (bossType) {
+        if (bossType && !state.entities.find(e => e.type === 'boss')) {
           state.setGameState('bossWarning')
           setTimeout(() => {
-            const boss = createBoss(bossType, canvas.width / 2, -100, state.wave)
-            state.addEntity(boss)
-            state.setGameState('playing')
-            soundManager.playTone(200, 0.5, 0.5)
+            const currentState = useGameStore.getState()
+            if (!currentState.entities.find(e => e.type === 'boss')) {
+              const boss = createBoss(bossType, canvas.width / 2, -100, state.wave)
+              currentState.addEntity(boss)
+              currentState.setGameState('playing')
+              soundManager.playTone(200, 0.5, 0.5)
+            }
           }, 2000)
           return
         }
