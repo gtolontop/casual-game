@@ -1,0 +1,54 @@
+.boss-warning-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.8);
+  z-index: 25;
+}
+
+.boss-warning-text {
+  font-size: 8rem;
+  font-weight: 900;
+  color: #FF006E;
+  text-shadow: 
+    0 0 20px #FF006E,
+    0 0 40px #FF006E,
+    0 0 60px #FF006E,
+    0 0 80px #FF006E;
+  letter-spacing: 0.2em;
+  animation: pulse 1s infinite;
+}
+
+.boss-subtitle {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #FFBE0B;
+  text-shadow: 0 0 20px rgba(255, 190, 11, 0.8);
+  margin-top: -1rem;
+  letter-spacing: 0.1em;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 768px) {
+  .boss-warning-text {
+    font-size: 4rem;
+  }
+  
+  .boss-subtitle {
+    font-size: 1.5rem;
+  }
+}
