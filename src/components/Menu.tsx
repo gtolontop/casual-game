@@ -26,7 +26,7 @@ const Menu: React.FC = () => {
         animate={{ y: 0, opacity: 1 }}
         transition={{ delay: 0.2, type: 'spring', stiffness: 100 }}
       >
-        BUBBLE MERGE
+        VOID SURVIVORS
       </motion.h1>
       
       <motion.div
