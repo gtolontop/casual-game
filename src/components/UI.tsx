@@ -54,6 +54,23 @@ const UI: React.FC = () => {
           </div>
         )}
       </div>
+      
+      {activePowerUps.length > 0 && (
+        <div className="power-ups-display">
+          {activePowerUps.map(powerUp => (
+            <div key={powerUp.id} className="power-up-indicator">
+              <span className="power-up-icon">{powerUp.icon}</span>
+              <span className="power-up-level">{powerUp.level}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      
+      <div className="stats-display">
+        <div className="stat">DMG: {Math.round(playerStats.damage)}</div>
+        <div className="stat">SPD: {playerStats.moveSpeed.toFixed(1)}</div>
+        <div className="stat">RATE: {playerStats.fireRate.toFixed(1)}/s</div>
+      </div>
     </motion.div>
   )
 }
