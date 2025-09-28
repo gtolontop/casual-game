@@ -292,16 +292,19 @@ const Canvas: React.FC = () => {
               }
             }
             
-            if (e1.type === 'projectile' && e2.type === 'enemy') {
-              e2.hp = (e2.hp || 0) - (e1.damage || 10)
+            if ((e1.type === 'projectile' && e2.type === 'enemy') || (e1.type === 'enemy' && e2.type === 'projectile')) {
+              const projectile = e1.type === 'projectile' ? e1 : e2
+              const enemy = e1.type === 'enemy' ? e1 : e2
               
-              const explosion = createExplosionParticles(e1.x, e1.y, e1.color, 10)
+              enemy.hp = (enemy.hp || 0) - (projectile.damage || 10)
+              
+              const explosion = createExplosionParticles(projectile.x, projectile.y, projectile.color, 10)
               state.addParticles(explosion)
               
-              state.removeEntity(e1.id)
+              state.removeEntity(projectile.id)
               
-              if (e2.hp <= 0) {
-                const bigExplosion = createExplosionParticles(e2.x, e2.y, e2.color, 20)
+              if (enemy.hp <= 0) {
+                const bigExplosion = createExplosionParticles(enemy.x, enemy.y, enemy.color, 20)
                 state.addParticles(bigExplosion)
                 
                 state.setScore(state.score + 10)
@@ -311,8 +314,8 @@ const Canvas: React.FC = () => {
                 
                 const xp: Entity = {
                   id: `xp-${Date.now()}`,
-                  x: e2.x,
-                  y: e2.y,
+                  x: enemy.x,
+                  y: enemy.y,
                   vx: (Math.random() - 0.5) * 2,
                   vy: (Math.random() - 0.5) * 2,
                   radius: 6,
@@ -321,13 +324,16 @@ const Canvas: React.FC = () => {
                 }
                 state.addEntity(xp)
                 
-                state.removeEntity(e2.id)
+                state.removeEntity(enemy.id)
                 
-                const enemies = state.entities.filter(e => e.type === 'enemy')
-                if (enemies.length === 0) {
-                  state.wave++
-                  state.triggerScreenShake(20)
-                  soundManager.playMerge(state.wave)
+                const enemies = state.entities.filter(e => e.type === 'enemy').length - 1
+                if (enemies === 0) {
+                  setTimeout(() => {
+                    const newState = useGameStore.getState()
+                    newState.wave = state.wave + 1
+                    newState.triggerScreenShake(20)
+                    soundManager.playMerge(newState.wave)
+                  }, 100)
                 }
               }
             }
@@ -394,12 +400,12 @@ const Canvas: React.FC = () => {
           ctx.fillRect(entity.x - 20, entity.y - 30, 40 * hpPercent, 4)
         }
         
-        if (entity.type === 'enemy' && entity.hp && entity.hp < entity.maxHp!) {
-          const hpPercent = entity.hp / entity.maxHp!
-          ctx.fillStyle = '#FF006E'
-          ctx.fillRect(entity.x - entity.radius, entity.y - entity.radius - 10, entity.radius * 2, 3)
+        if (entity.type === 'enemy') {
+          const hpPercent = (entity.hp || 0) / (entity.maxHp || 1)
+          ctx.fillStyle = 'rgba(255, 0, 110, 0.5)'
+          ctx.fillRect(entity.x - entity.radius, entity.y - entity.radius - 10, entity.radius * 2, 4)
           ctx.fillStyle = '#FFBE0B'
-          ctx.fillRect(entity.x - entity.radius, entity.y - entity.radius - 10, entity.radius * 2 * hpPercent, 3)
+          ctx.fillRect(entity.x - entity.radius, entity.y - entity.radius - 10, entity.radius * 2 * hpPercent, 4)
         }
         
         ctx.restore()
