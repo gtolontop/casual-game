@@ -75,7 +75,7 @@ const Canvas: React.FC = () => {
         const enemyType = types[Math.floor(Math.random() * Math.min(types.length, 1 + Math.floor(state.wave / 3)))]
         
         let enemyStats = {
-          hp: 20,
+          hp: 10,
           speed: 1,
           damage: 10,
           radius: 12,
@@ -84,13 +84,13 @@ const Canvas: React.FC = () => {
         
         switch(enemyType) {
           case 'fast':
-            enemyStats = { hp: 15, speed: 2.5, damage: 5, radius: 8, color: '#FB5607' }
+            enemyStats = { hp: 5, speed: 2.5, damage: 5, radius: 8, color: '#FB5607' }
             break
           case 'tank':
-            enemyStats = { hp: 50, speed: 0.5, damage: 20, radius: 20, color: '#8338EC' }
+            enemyStats = { hp: 30, speed: 0.5, damage: 20, radius: 20, color: '#8338EC' }
             break
           case 'swarm':
-            enemyStats = { hp: 10, speed: 1.5, damage: 5, radius: 6, color: '#FFBE0B' }
+            enemyStats = { hp: 3, speed: 1.5, damage: 5, radius: 6, color: '#FFBE0B' }
             for (let i = 0; i < 3; i++) {
               const swarmAngle = angle + (Math.random() - 0.5)
               state.addEntity({
