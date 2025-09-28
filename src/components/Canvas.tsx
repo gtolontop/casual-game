@@ -280,7 +280,17 @@ const Canvas: React.FC = () => {
           
           if (dist < e1.radius + e2.radius) {
             if (e1.type === 'player' && e2.type === 'enemy') {
-              if (!e1.damage) {
+              // Shield effect
+              const shieldLevel = state.powerUps.find(p => p.id === 'shield')?.level || 0
+              const shieldCooldown = 5000 - shieldLevel * 1000 // 5s to 2s cooldown
+              const isShielded = shieldLevel > 0 && currentTime - lastShieldTime.current > shieldCooldown
+              
+              if (isShielded) {
+                lastShieldTime.current = currentTime
+                const shieldParticles = createExplosionParticles(e1.x, e1.y, '#3A86FF', 15)
+                state.addParticles(shieldParticles)
+                soundManager.playTone(1200, 0.1, 0.3)
+              } else if (!e1.damage) {
                 e1.hp = (e1.hp || 0) - (e2.damage || 10)
                 e1.damage = 30
                 state.triggerScreenShake(10)
