@@ -365,9 +365,15 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
   })),
   
-  addParticles: (newParticles) => set((state) => ({ 
-    particles: [...state.particles, ...newParticles] 
-  })),
+  addParticles: (newParticles) => set((state) => {
+    // Limit particles to prevent lag
+    const maxParticles = 200
+    const combined = [...state.particles, ...newParticles]
+    if (combined.length > maxParticles) {
+      return { particles: combined.slice(-maxParticles) }
+    }
+    return { particles: combined }
+  }),
   
   updateParticles: () => set((state) => ({
     particles: state.particles

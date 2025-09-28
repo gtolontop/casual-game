@@ -101,8 +101,8 @@ const Canvas: React.FC = () => {
         }
       }
       
-      const spawnDelay = Math.max(300, 2000 - state.wave * 100)
-      const maxEnemies = 10 + state.wave * 2
+      const spawnDelay = Math.max(500, 2000 - state.wave * 50)
+      const maxEnemies = Math.min(20, 8 + state.wave)
       
       if (currentTime - enemySpawnTime.current > spawnDelay && enemies.length < maxEnemies) {
         enemySpawnTime.current = currentTime
