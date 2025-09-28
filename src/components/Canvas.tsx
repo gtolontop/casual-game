@@ -4,6 +4,8 @@ import { createExplosionParticles, createAbsorbParticles } from '../utils/partic
 import { soundManager } from '../utils/sound'
 import { enemyTypes, bossTypes, getEnemiesForWave, getBossForWave, createEnemy, createBoss } from '../utils/enemies'
 import { shootProjectile, updateProjectiles } from '../utils/weapons'
+import { OptimizedRenderer } from '../utils/renderer'
+import { ObjectPool, SpatialGrid } from '../utils/objectPool'
 import './Canvas.css'
 
 const Canvas: React.FC = () => {
@@ -15,6 +17,33 @@ const Canvas: React.FC = () => {
   const enemySpawnTime = useRef(0)
   const lastShieldTime = useRef(0)
   const killCount = useRef(0)
+  const rendererRef = useRef<OptimizedRenderer | null>(null)
+  const spatialGridRef = useRef<SpatialGrid<Entity>>(new SpatialGrid(150))
+  const projectilePoolRef = useRef<ObjectPool<Entity>>(new ObjectPool(
+    () => ({
+      id: '',
+      x: 0,
+      y: 0,
+      vx: 0,
+      vy: 0,
+      radius: 4,
+      color: '#00F5FF',
+      type: 'projectile' as const,
+      damage: 10,
+      lifetime: 0
+    }),
+    (p) => {
+      p.id = ''
+      p.x = 0
+      p.y = 0
+      p.vx = 0
+      p.vy = 0
+      p.lifetime = 0
+      p.damage = 10
+      p.isCrit = false
+    },
+    100
+  ))
   
   const gameState = useGameStore(state => state.gameState)
   
@@ -28,10 +57,18 @@ const Canvas: React.FC = () => {
     const resizeCanvas = () => {
       canvas.width = window.innerWidth
       canvas.height = window.innerHeight
+      if (rendererRef.current) {
+        rendererRef.current.resize(canvas.width, canvas.height)
+      }
     }
     
     resizeCanvas()
     window.addEventListener('resize', resizeCanvas)
+    
+    // Initialize renderer
+    if (!rendererRef.current) {
+      rendererRef.current = new OptimizedRenderer(ctx, canvas.width, canvas.height)
+    }
     
     if (gameState === 'menu' || gameState === 'gameOver') {
       gameInitialized.current = false
@@ -156,7 +193,12 @@ const Canvas: React.FC = () => {
         
         if (nearest) {
           const projectiles = shootProjectile(player, nearest, weapon, state, currentTime)
-          projectiles.forEach(p => state.addEntity(p))
+          projectiles.forEach(p => {
+            // Use object pool for projectiles
+            const pooledProjectile = projectilePoolRef.current.get()
+            Object.assign(pooledProjectile, p)
+            state.addEntity(pooledProjectile)
+          })
         }
       }
     }
@@ -180,18 +222,19 @@ const Canvas: React.FC = () => {
       
       const currentTime = Date.now()
       
-      // Background effect
-      ctx.fillStyle = 'rgba(10, 10, 10, 0.3)'
-      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      // Use optimized renderer clear
+      rendererRef.current?.clear()
       
-      // Limit projectiles to prevent lag
-      const projectiles = state.entities.filter(e => e.type === 'projectile').length
-      if (projectiles > 40) {
-        const oldestProjectiles = state.entities
-          .filter(e => e.type === 'projectile')
+      // Clean up expired projectiles more efficiently
+      const projectiles = state.entities.filter(e => e.type === 'projectile')
+      if (projectiles.length > 40) {
+        const toRemove = projectiles
           .sort((a, b) => (a.lifetime || 0) - (b.lifetime || 0))
-          .slice(0, 5)
-        oldestProjectiles.forEach(p => state.removeEntity(p.id))
+          .slice(0, Math.max(5, projectiles.length - 40))
+        toRemove.forEach(p => {
+          state.removeEntity(p.id)
+          projectilePoolRef.current.release(p)
+        })
       }
       
       const entities = [...state.entities]
@@ -234,6 +277,10 @@ const Canvas: React.FC = () => {
       
       spawnEnemy(currentTime)
       
+      // Update spatial grid
+      spatialGridRef.current.clear()
+      entities.forEach(e => spatialGridRef.current.add(e))
+      
       // Update entities
       entities.forEach(entity => {
         if (entity.type === 'enemy' && player) {
@@ -252,18 +299,17 @@ const Canvas: React.FC = () => {
           } else if (entity.pattern === 'sniper' && entity.attackCooldown === 0 && Math.random() < 0.02) {
             entity.attackCooldown = 180
             const angle = Math.atan2(player.y - entity.y, player.x - entity.x)
-            const projectile: Entity = {
-              id: `enemy-proj-${Date.now()}`,
-              x: entity.x,
-              y: entity.y,
-              vx: Math.cos(angle) * 10,
-              vy: Math.sin(angle) * 10,
-              radius: 6,
-              color: '#FF006E',
-              type: 'projectile',
-              damage: entity.damage,
-              lifetime: 120
-            }
+            const projectile = projectilePoolRef.current.get()
+            projectile.id = `enemy-proj-${Date.now()}`
+            projectile.x = entity.x
+            projectile.y = entity.y
+            projectile.vx = Math.cos(angle) * 10
+            projectile.vy = Math.sin(angle) * 10
+            projectile.radius = 6
+            projectile.color = '#FF006E'
+            projectile.type = 'projectile'
+            projectile.damage = entity.damage
+            projectile.lifetime = 120
             state.addEntity(projectile)
             soundManager.playTone(400, 0.1, 0.2)
           } else {
@@ -294,18 +340,17 @@ const Canvas: React.FC = () => {
             const angle = (boss.attackCooldown / 10) * 0.5
             for (let i = 0; i < 4; i++) {
               const spiralAngle = angle + (Math.PI / 2) * i
-              const projectile: Entity = {
-                id: `boss-proj-${Date.now()}-${i}`,
-                x: boss.x + Math.cos(spiralAngle) * 30,
-                y: boss.y + Math.sin(spiralAngle) * 30,
-                vx: Math.cos(spiralAngle) * 3,
-                vy: Math.sin(spiralAngle) * 3,
-                radius: 8,
-                color: boss.color,
-                type: 'projectile',
-                damage: boss.damage! / 2,
-                lifetime: 200
-              }
+              const projectile = projectilePoolRef.current.get()
+              projectile.id = `boss-proj-${Date.now()}-${i}`
+              projectile.x = boss.x + Math.cos(spiralAngle) * 30
+              projectile.y = boss.y + Math.sin(spiralAngle) * 30
+              projectile.vx = Math.cos(spiralAngle) * 3
+              projectile.vy = Math.sin(spiralAngle) * 3
+              projectile.radius = 8
+              projectile.color = boss.color
+              projectile.type = 'projectile'
+              projectile.damage = boss.damage! / 2
+              projectile.lifetime = 200
               state.addEntity(projectile)
             }
           }
@@ -339,11 +384,11 @@ const Canvas: React.FC = () => {
       // Update projectiles
       updateProjectiles(entities, state)
       
-      // Collision detection
-      for (let i = 0; i < entities.length; i++) {
-        for (let j = i + 1; j < entities.length; j++) {
-          const e1 = entities[i]
-          const e2 = entities[j]
+      // Optimized collision detection using spatial grid
+      entities.forEach(e1 => {
+        const nearby = spatialGridRef.current.getNearby(e1)
+        nearby.forEach(e2 => {
+          if (e1.id === e2.id || e1.id >= e2.id) return // Avoid duplicate checks
           const dist = Math.hypot(e1.x - e2.x, e1.y - e2.y)
           
           if (dist < e1.radius + e2.radius) {
@@ -394,13 +439,16 @@ const Canvas: React.FC = () => {
                   state.triggerScreenShake(10)
                   soundManager.playTone(200, 0.1, 0.3)
                   state.removeEntity(projectile.id)
+                if (projectile.type === 'projectile') {
+                  projectilePoolRef.current.release(projectile)
+                }
                   
                   if (other.hp <= 0) {
                     soundManager.playGameOver()
                     state.setGameState('gameOver')
                   }
                 }
-                continue
+                return
               }
               
               // Player projectile vs Enemy
@@ -418,6 +466,9 @@ const Canvas: React.FC = () => {
               state.addParticles(explosion)
               
               state.removeEntity(projectile.id)
+              if (projectile.type === 'projectile') {
+                projectilePoolRef.current.release(projectile)
+              }
               
               if (enemy.hp <= 0) {
                 const bigExplosion = createExplosionParticles(enemy.x, enemy.y, enemy.color, 20)
@@ -524,7 +575,7 @@ const Canvas: React.FC = () => {
                   }, 500)
                 }
               }
-              continue
+              return
             }
             }
             
@@ -538,8 +589,8 @@ const Canvas: React.FC = () => {
               state.removeEntity(e2.id)
             }
           }
-        }
-      }
+        })
+      })
       
       if (player && player.damage) {
         player.damage--
@@ -553,75 +604,25 @@ const Canvas: React.FC = () => {
       state.updateParticles()
       state.updateScreenShake()
       
-      // Render particles (limited for performance)
-      const particlesToRender = state.particles.slice(-100)
-      particlesToRender.forEach(particle => {
-        ctx.save()
-        ctx.globalAlpha = particle.life
-        ctx.fillStyle = particle.color
-        // No shadows for particles for performance
-        ctx.beginPath()
-        ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2)
-        ctx.fill()
-        ctx.restore()
-      })
-      
-      // Render entities
-      entities.forEach(entity => {
-        ctx.save()
+      // Use optimized batch rendering
+      if (rendererRef.current) {
+        // Render particles
+        rendererRef.current.renderParticlesBatch(state.particles.slice(-100))
         
-        if (entity.type === 'player' && entity.damage && entity.damage > 0 && Math.floor(entity.damage / 5) % 2 === 0) {
-          ctx.globalAlpha = 0.3
-        }
+        // Render entities
+        rendererRef.current.renderEntitiesBatch(entities)
         
-        // Disable shadows for performance
-        if (entity.type === 'boss' || entity.type === 'xp') {
-          ctx.shadowColor = entity.color
-          ctx.shadowBlur = entity.type === 'boss' ? 30 : 20
-        }
+        // Render health bars separately
+        rendererRef.current.renderHealthBars(entities)
         
-        ctx.fillStyle = entity.color
-        
-        ctx.beginPath()
-        ctx.arc(entity.x, entity.y, entity.radius, 0, Math.PI * 2)
-        ctx.fill()
-        
-        if (entity.type === 'player') {
-          ctx.strokeStyle = '#fff'
-          ctx.lineWidth = 2
-          ctx.globalAlpha = 0.5
-          ctx.stroke()
-          
-          const hpPercent = (entity.hp || 0) / (entity.maxHp || 1)
-          ctx.fillStyle = '#FF006E'
-          ctx.fillRect(entity.x - 20, entity.y - 30, 40, 4)
-          ctx.fillStyle = '#06FFB4'
-          ctx.fillRect(entity.x - 20, entity.y - 30, 40 * hpPercent, 4)
-        }
-        
-        if ((entity.type === 'enemy' || entity.type === 'boss')) {
-          const hpPercent = (entity.hp || 0) / (entity.maxHp || 1)
-          ctx.fillStyle = 'rgba(255, 0, 110, 0.5)'
-          ctx.fillRect(entity.x - entity.radius, entity.y - entity.radius - 10, entity.radius * 2, 4)
-          ctx.fillStyle = '#FFBE0B'
-          ctx.fillRect(entity.x - entity.radius, entity.y - entity.radius - 10, entity.radius * 2 * hpPercent, 4)
-          
-          if (entity.type === 'boss') {
-            ctx.font = 'bold 14px Arial'
-            ctx.fillStyle = '#fff'
-            ctx.textAlign = 'center'
-            ctx.fillText(bossTypes[entity.subtype!]?.name || 'BOSS', entity.x, entity.y - entity.radius - 20)
-          }
-        }
-        
-        if (entity.isCrit) {
-          ctx.strokeStyle = '#FF006E'
-          ctx.lineWidth = 2
-          ctx.stroke()
-        }
-        
-        ctx.restore()
-      })
+        // Render boss names
+        entities.filter(e => e.type === 'boss').forEach(boss => {
+          ctx.font = 'bold 14px Arial'
+          ctx.fillStyle = '#fff'
+          ctx.textAlign = 'center'
+          ctx.fillText(bossTypes[boss.subtype!]?.name || 'BOSS', boss.x, boss.y - boss.radius - 20)
+        })
+      }
       
       animationRef.current = requestAnimationFrame(gameLoop)
     }
