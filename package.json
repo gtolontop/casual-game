@@ -1,0 +1,36 @@
+{
+  "name": "casual-game",
+  "version": "1.0.0",
+  "description": "casual game",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gtolontop/casual-game.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/gtolontop/casual-game/issues"
+  },
+  "homepage": "https://github.com/gtolontop/casual-game#readme",
+  "dependencies": {
+    "@pixi/sound": "^6.0.1",
+    "@types/matter-js": "^0.20.2",
+    "@types/react": "^19.1.15",
+    "@types/react-dom": "^19.1.9",
+    "framer-motion": "^12.23.22",
+    "matter-js": "^0.20.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "typescript": "^5.9.2",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.4",
+    "vite": "^7.1.7"
+  }
+}
