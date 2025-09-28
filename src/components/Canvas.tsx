@@ -2,6 +2,8 @@ import React, { useRef, useEffect } from 'react'
 import { useGameStore, Entity } from '../store/gameStore'
 import { createExplosionParticles, createAbsorbParticles } from '../utils/particles'
 import { soundManager } from '../utils/sound'
+import { enemyTypes, bossTypes, getEnemiesForWave, getBossForWave, createEnemy, createBoss } from '../utils/enemies'
+import { shootProjectile, updateProjectiles } from '../utils/weapons'
 import './Canvas.css'
 
 const Canvas: React.FC = () => {
@@ -12,6 +14,7 @@ const Canvas: React.FC = () => {
   const lastShootTime = useRef(0)
   const enemySpawnTime = useRef(0)
   const lastShieldTime = useRef(0)
+  const killCount = useRef(0)
   
   const gameState = useGameStore(state => state.gameState)
   
@@ -39,8 +42,7 @@ const Canvas: React.FC = () => {
       }
     }
     
-    if (gameState === 'levelUp') {
-      // Don't reset when leveling up, just pause the game
+    if (gameState === 'levelUp' || gameState === 'bossWarning') {
       ctx.fillStyle = 'rgba(10, 10, 10, 0.5)'
       ctx.fillRect(0, 0, canvas.width, canvas.height)
       return () => {
@@ -53,9 +55,9 @@ const Canvas: React.FC = () => {
     if (!gameInitialized.current && gameState === 'playing') {
       gameInitialized.current = true
       
-      // Only reset if we're starting a new game (no entities)
       if (state.entities.length === 0) {
         state.reset()
+        killCount.current = 0
         
         const player: Entity = {
           id: 'player',
@@ -77,117 +79,81 @@ const Canvas: React.FC = () => {
     const spawnEnemy = (currentTime: number) => {
       const state = useGameStore.getState()
       const enemies = state.entities.filter(e => e.type === 'enemy')
+      const boss = state.entities.find(e => e.type === 'boss')
       
-      const spawnDelay = Math.max(500, 2000 - state.wave * 100)
-      if (currentTime - enemySpawnTime.current > spawnDelay && enemies.length < 20 + state.wave * 2) {
+      if (boss) return // Don't spawn enemies during boss fight
+      
+      // Check for boss spawn
+      if (state.wave % 5 === 0 && enemies.length === 0 && !boss) {
+        const bossType = getBossForWave(state.wave)
+        if (bossType) {
+          state.setGameState('bossWarning')
+          setTimeout(() => {
+            const boss = createBoss(bossType, canvas.width / 2, -100, state.wave)
+            state.addEntity(boss)
+            state.setGameState('playing')
+            soundManager.playTone(200, 0.5, 0.5)
+          }, 2000)
+          return
+        }
+      }
+      
+      const spawnDelay = Math.max(300, 2000 - state.wave * 100)
+      const maxEnemies = 10 + state.wave * 2
+      
+      if (currentTime - enemySpawnTime.current > spawnDelay && enemies.length < maxEnemies) {
         enemySpawnTime.current = currentTime
+        
+        const enemyPool = getEnemiesForWave(state.wave)
+        const enemyTypeId = enemyPool[Math.floor(Math.random() * enemyPool.length)]
+        const enemyType = enemyTypes[enemyTypeId]
         
         const angle = Math.random() * Math.PI * 2
         const distance = 400 + Math.random() * 200
         
-        const types = ['basic', 'fast', 'tank', 'swarm']
-        const enemyType = types[Math.floor(Math.random() * Math.min(types.length, 1 + Math.floor(state.wave / 3)))]
-        
-        let enemyStats = {
-          hp: 10,
-          speed: 1,
-          damage: 10,
-          radius: 12,
-          color: '#FF006E'
+        // Swarm spawning
+        if (enemyTypeId === 'swarm') {
+          for (let i = 0; i < 5; i++) {
+            const swarmAngle = angle + (Math.random() - 0.5)
+            const enemy = createEnemy(
+              enemyType,
+              canvas.width / 2 + Math.cos(swarmAngle) * distance,
+              canvas.height / 2 + Math.sin(swarmAngle) * distance,
+              state.wave
+            )
+            state.addEntity(enemy)
+          }
+        } else {
+          const enemy = createEnemy(
+            enemyType,
+            canvas.width / 2 + Math.cos(angle) * distance,
+            canvas.height / 2 + Math.sin(angle) * distance,
+            state.wave
+          )
+          state.addEntity(enemy)
         }
-        
-        switch(enemyType) {
-          case 'fast':
-            enemyStats = { hp: 5, speed: 2.5, damage: 5, radius: 8, color: '#FB5607' }
-            break
-          case 'tank':
-            enemyStats = { hp: 30, speed: 0.5, damage: 20, radius: 20, color: '#8338EC' }
-            break
-          case 'swarm':
-            enemyStats = { hp: 3, speed: 1.5, damage: 5, radius: 6, color: '#FFBE0B' }
-            for (let i = 0; i < 3; i++) {
-              const swarmAngle = angle + (Math.random() - 0.5)
-              state.addEntity({
-                id: `enemy-${Date.now()}-${i}`,
-                x: canvas.width / 2 + Math.cos(swarmAngle) * distance,
-                y: canvas.height / 2 + Math.sin(swarmAngle) * distance,
-                vx: 0,
-                vy: 0,
-                radius: enemyStats.radius,
-                color: enemyStats.color,
-                type: 'enemy',
-                subtype: enemyType,
-                hp: enemyStats.hp,
-                maxHp: enemyStats.hp,
-                damage: enemyStats.damage,
-                speed: enemyStats.speed
-              })
-            }
-            return
-        }
-        
-        const enemy: Entity = {
-          id: `enemy-${Date.now()}`,
-          x: canvas.width / 2 + Math.cos(angle) * distance,
-          y: canvas.height / 2 + Math.sin(angle) * distance,
-          vx: 0,
-          vy: 0,
-          radius: enemyStats.radius,
-          color: enemyStats.color,
-          type: 'enemy',
-          subtype: enemyType,
-          hp: enemyStats.hp,
-          maxHp: enemyStats.hp,
-          damage: enemyStats.damage,
-          speed: enemyStats.speed
-        }
-        
-        state.addEntity(enemy)
       }
     }
     
-    const shootProjectile = (currentTime: number, player: Entity) => {
+    const shootProjectiles = (currentTime: number, player: Entity) => {
       const state = useGameStore.getState()
-      const shootDelay = 1000 / state.playerStats.fireRate
+      const weapon = state.currentWeapon
+      const shootDelay = 1000 / (weapon.fireRate * state.playerStats.fireRate / 2)
       
       if (currentTime - lastShootTime.current > shootDelay) {
         lastShootTime.current = currentTime
         
-        const nearestEnemy = state.entities
-          .filter(e => e.type === 'enemy')
-          .reduce((nearest: Entity | null, enemy) => {
-            if (!nearest) return enemy
-            const distToNearest = Math.hypot(player.x - nearest.x, player.y - nearest.y)
-            const distToEnemy = Math.hypot(player.x - enemy.x, player.y - enemy.y)
-            return distToEnemy < distToNearest ? enemy : nearest
-          }, null)
+        const enemies = state.entities.filter(e => e.type === 'enemy' || e.type === 'boss')
+        const nearest = enemies.reduce((nearest: Entity | null, enemy) => {
+          if (!nearest) return enemy
+          const distToNearest = Math.hypot(player.x - nearest.x, player.y - nearest.y)
+          const distToEnemy = Math.hypot(player.x - enemy.x, player.y - enemy.y)
+          return distToEnemy < distToNearest ? enemy : nearest
+        }, null)
         
-        if (nearestEnemy) {
-          const angle = Math.atan2(nearestEnemy.y - player.y, nearestEnemy.x - player.x)
-          
-          const multishot = state.powerUps.find(p => p.id === 'multishot')?.level || 0
-          const projectileCount = 1 + multishot
-          
-          for (let i = 0; i < projectileCount; i++) {
-            const spreadAngle = angle + (i - (projectileCount - 1) / 2) * 0.1
-            
-            const projectile: Entity = {
-              id: `proj-${Date.now()}-${i}`,
-              x: player.x,
-              y: player.y,
-              vx: Math.cos(spreadAngle) * state.playerStats.projectileSpeed,
-              vy: Math.sin(spreadAngle) * state.playerStats.projectileSpeed,
-              radius: 4,
-              color: '#00F5FF',
-              type: 'projectile',
-              damage: state.playerStats.damage,
-              lifetime: 60
-            }
-            
-            state.addEntity(projectile)
-          }
-          
-          soundManager.playTone(800, 0.05, 0.1)
+        if (nearest) {
+          const projectiles = shootProjectile(player, nearest, weapon, state, currentTime)
+          projectiles.forEach(p => state.addEntity(p))
         }
       }
     }
@@ -211,12 +177,14 @@ const Canvas: React.FC = () => {
       
       const currentTime = Date.now()
       
+      // Background effect
       ctx.fillStyle = 'rgba(10, 10, 10, 0.3)'
       ctx.fillRect(0, 0, canvas.width, canvas.height)
       
       const entities = [...state.entities]
       const player = entities.find(e => e.type === 'player')
       
+      // Player movement
       if (player) {
         const dx = mouseRef.current.x - player.x
         const dy = mouseRef.current.y - player.y
@@ -236,35 +204,105 @@ const Canvas: React.FC = () => {
         player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, player.x))
         player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, player.y))
         
-        shootProjectile(currentTime, player)
+        // Berserk mode
+        const berserkLevel = state.powerUps.find(p => p.id === 'berserk')?.level || 0
+        if (berserkLevel > 0 && player.hp! / player.maxHp! < 0.3) {
+          ctx.save()
+          ctx.globalAlpha = 0.3
+          ctx.fillStyle = '#FF006E'
+          ctx.beginPath()
+          ctx.arc(player.x, player.y, player.radius + 10, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.restore()
+        }
+        
+        shootProjectiles(currentTime, player)
       }
       
       spawnEnemy(currentTime)
       
+      // Update entities
       entities.forEach(entity => {
         if (entity.type === 'enemy' && player) {
-          const dx = player.x - entity.x
-          const dy = player.y - entity.y
-          const distance = Math.sqrt(dx * dx + dy * dy)
+          const timeDilation = state.powerUps.find(p => p.id === 'time')?.level || 0
+          const slowFactor = timeDilation > 0 ? 0.7 : 1
           
-          if (distance > 0) {
-            entity.vx = (dx / distance) * (entity.speed || 1)
-            entity.vy = (dy / distance) * (entity.speed || 1)
+          // Enemy patterns
+          if (entity.pattern === 'dash' && entity.attackCooldown === 0) {
+            const dist = Math.hypot(player.x - entity.x, player.y - entity.y)
+            if (dist < 200) {
+              entity.attackCooldown = 120
+              const angle = Math.atan2(player.y - entity.y, player.x - entity.x)
+              entity.vx = Math.cos(angle) * entity.speed! * 5
+              entity.vy = Math.sin(angle) * entity.speed! * 5
+            }
+          } else if (entity.pattern === 'sniper' && entity.attackCooldown === 0 && Math.random() < 0.02) {
+            entity.attackCooldown = 180
+            const angle = Math.atan2(player.y - entity.y, player.x - entity.x)
+            const projectile: Entity = {
+              id: `enemy-proj-${Date.now()}`,
+              x: entity.x,
+              y: entity.y,
+              vx: Math.cos(angle) * 10,
+              vy: Math.sin(angle) * 10,
+              radius: 6,
+              color: '#FF006E',
+              type: 'projectile',
+              damage: entity.damage,
+              lifetime: 120
+            }
+            state.addEntity(projectile)
+            soundManager.playTone(400, 0.1, 0.2)
+          } else {
+            const dx = player.x - entity.x
+            const dy = player.y - entity.y
+            const distance = Math.sqrt(dx * dx + dy * dy)
+            
+            if (distance > 0) {
+              entity.vx = (dx / distance) * (entity.speed || 1) * slowFactor
+              entity.vy = (dy / distance) * (entity.speed || 1) * slowFactor
+            }
+          }
+          
+          if (entity.attackCooldown) {
+            entity.attackCooldown--
           }
           
           entity.x += entity.vx
           entity.y += entity.vy
         }
         
-        if (entity.type === 'projectile') {
-          entity.x += entity.vx
-          entity.y += entity.vy
-          entity.lifetime = (entity.lifetime || 0) - 1
+        if (entity.type === 'boss' && player) {
+          // Boss patterns
+          const boss = entity
+          boss.attackCooldown = (boss.attackCooldown || 0) + 1
           
-          if (entity.lifetime <= 0 || 
-              entity.x < 0 || entity.x > canvas.width || 
-              entity.y < 0 || entity.y > canvas.height) {
-            state.removeEntity(entity.id)
+          if (boss.pattern === 'spiral' && boss.attackCooldown % 10 === 0) {
+            const angle = (boss.attackCooldown / 10) * 0.5
+            for (let i = 0; i < 4; i++) {
+              const spiralAngle = angle + (Math.PI / 2) * i
+              const projectile: Entity = {
+                id: `boss-proj-${Date.now()}-${i}`,
+                x: boss.x + Math.cos(spiralAngle) * 30,
+                y: boss.y + Math.sin(spiralAngle) * 30,
+                vx: Math.cos(spiralAngle) * 3,
+                vy: Math.sin(spiralAngle) * 3,
+                radius: 8,
+                color: boss.color,
+                type: 'projectile',
+                damage: boss.damage! / 2,
+                lifetime: 200
+              }
+              state.addEntity(projectile)
+            }
+          }
+          
+          // Boss movement
+          const targetY = canvas.height * 0.2
+          if (boss.y < targetY) {
+            boss.y += 2
+          } else {
+            boss.x += Math.sin(boss.attackCooldown * 0.02) * 2
           }
         }
         
@@ -285,6 +323,10 @@ const Canvas: React.FC = () => {
         }
       })
       
+      // Update projectiles
+      updateProjectiles(entities, state)
+      
+      // Collision detection
       for (let i = 0; i < entities.length; i++) {
         for (let j = i + 1; j < entities.length; j++) {
           const e1 = entities[i]
@@ -292,37 +334,57 @@ const Canvas: React.FC = () => {
           const dist = Math.hypot(e1.x - e2.x, e1.y - e2.y)
           
           if (dist < e1.radius + e2.radius) {
-            if (e1.type === 'player' && e2.type === 'enemy') {
-              // Shield effect
-              const shieldLevel = state.powerUps.find(p => p.id === 'shield')?.level || 0
-              const shieldCooldown = 5000 - shieldLevel * 1000 // 5s to 2s cooldown
-              const isShielded = shieldLevel > 0 && currentTime - lastShieldTime.current > shieldCooldown
+            // Player vs Enemy
+            if (e1.type === 'player' && (e2.type === 'enemy' || e2.type === 'boss')) {
+              const dodgeRoll = Math.random()
+              const dodged = dodgeRoll < state.playerStats.dodge
               
-              if (isShielded) {
-                lastShieldTime.current = currentTime
-                const shieldParticles = createExplosionParticles(e1.x, e1.y, '#3A86FF', 15)
-                state.addParticles(shieldParticles)
-                soundManager.playTone(1200, 0.1, 0.3)
-              } else if (!e1.damage) {
-                e1.hp = (e1.hp || 0) - (e2.damage || 10)
-                e1.damage = 30
-                state.triggerScreenShake(10)
-                soundManager.playTone(200, 0.1, 0.3)
+              if (dodged) {
+                const dodgeParticles = createExplosionParticles(e1.x, e1.y, '#FFFFFF', 10)
+                state.addParticles(dodgeParticles)
+                soundManager.playTone(1500, 0.05, 0.1)
+              } else {
+                const shieldLevel = state.powerUps.find(p => p.id === 'shield')?.level || 0
+                const shieldCooldown = 5000 - shieldLevel * 1000
+                const isShielded = shieldLevel > 0 && currentTime - lastShieldTime.current > shieldCooldown
                 
-                if (e1.hp <= 0) {
-                  soundManager.playGameOver()
-                  state.setGameState('gameOver')
+                if (isShielded) {
+                  lastShieldTime.current = currentTime
+                  const shieldParticles = createExplosionParticles(e1.x, e1.y, '#3A86FF', 15)
+                  state.addParticles(shieldParticles)
+                  soundManager.playTone(1200, 0.1, 0.3)
+                } else if (!e1.damage) {
+                  const damage = Math.max(1, (e2.damage || 10) - state.playerStats.armor)
+                  e1.hp = (e1.hp || 0) - damage
+                  e1.damage = 30
+                  state.triggerScreenShake(10)
+                  soundManager.playTone(200, 0.1, 0.3)
+                  
+                  if (e1.hp <= 0) {
+                    soundManager.playGameOver()
+                    state.setGameState('gameOver')
+                  }
                 }
               }
             }
             
-            if ((e1.type === 'projectile' && e2.type === 'enemy') || (e1.type === 'enemy' && e2.type === 'projectile')) {
+            // Projectile vs Enemy
+            if ((e1.type === 'projectile' && (e2.type === 'enemy' || e2.type === 'boss')) || 
+                ((e1.type === 'enemy' || e1.type === 'boss') && e2.type === 'projectile')) {
               const projectile = e1.type === 'projectile' ? e1 : e2
-              const enemy = e1.type === 'enemy' ? e1 : e2
+              const enemy = e1.type === 'enemy' || e1.type === 'boss' ? e1 : e2
+              
+              // Skip enemy projectiles hitting enemies
+              if (projectile.id.includes('enemy') || projectile.id.includes('boss')) continue
               
               enemy.hp = (enemy.hp || 0) - (projectile.damage || 10)
               
-              const explosion = createExplosionParticles(projectile.x, projectile.y, projectile.color, 10)
+              const explosion = createExplosionParticles(
+                projectile.x, 
+                projectile.y, 
+                projectile.isCrit ? '#FF006E' : projectile.color, 
+                projectile.isCrit ? 15 : 10
+              )
               state.addParticles(explosion)
               
               state.removeEntity(projectile.id)
@@ -331,28 +393,48 @@ const Canvas: React.FC = () => {
                 const bigExplosion = createExplosionParticles(enemy.x, enemy.y, enemy.color, 20)
                 state.addParticles(bigExplosion)
                 
-                state.setScore(state.score + 10)
+                // Score and XP
+                const enemyType = enemy.type === 'boss' ? 
+                  bossTypes[enemy.subtype!] : 
+                  enemyTypes[enemy.subtype!]
+                  
+                state.setScore(state.score + (enemyType?.scoreReward || 10))
                 state.incrementCombo()
-                soundManager.playPop()
-                state.triggerScreenShake(5)
+                killCount.current++
                 
-                // Lifesteal effect
+                // Nuclear option
+                const nukeLevel = state.powerUps.find(p => p.id === 'nuke')?.level || 0
+                if (nukeLevel > 0 && killCount.current % 100 === 0) {
+                  state.entities
+                    .filter(e => e.type === 'enemy')
+                    .forEach(e => {
+                      const nukeExplosion = createExplosionParticles(e.x, e.y, '#FFFF00', 30)
+                      state.addParticles(nukeExplosion)
+                      state.removeEntity(e.id)
+                    })
+                  state.triggerScreenShake(50)
+                  soundManager.playTone(100, 0.5, 0.5)
+                }
+                
+                // Lifesteal
                 const lifestealLevel = state.powerUps.find(p => p.id === 'lifesteal')?.level || 0
-                if (lifestealLevel > 0 && player) {
-                  const healAmount = 2 * lifestealLevel
+                const vampireLevel = state.powerUps.find(p => p.id === 'vampire')?.level || 0
+                
+                if ((lifestealLevel > 0 || vampireLevel > 0) && player) {
+                  const healAmount = lifestealLevel * 2 + vampireLevel * (projectile.damage || 10) * 0.02
                   player.hp = Math.min((player.hp || 0) + healAmount, player.maxHp || 100)
                   const healParticle = createAbsorbParticles(enemy.x, enemy.y, player.x, player.y, '#FF006E', 3)
                   state.addParticles(healParticle)
                 }
                 
-                // Explosive shots effect
+                // Explosive shots
                 const explosiveLevel = state.powerUps.find(p => p.id === 'explosive')?.level || 0
                 if (explosiveLevel > 0) {
                   const explosionRadius = 50 + explosiveLevel * 20
                   const explosionDamage = state.playerStats.damage * 0.5
                   
                   state.entities
-                    .filter(e => e.type === 'enemy' && e.id !== enemy.id)
+                    .filter(e => (e.type === 'enemy' || e.type === 'boss') && e.id !== enemy.id)
                     .forEach(otherEnemy => {
                       const dist = Math.hypot(otherEnemy.x - enemy.x, otherEnemy.y - enemy.y)
                       if (dist < explosionRadius) {
@@ -372,21 +454,31 @@ const Canvas: React.FC = () => {
                   ctx.restore()
                 }
                 
-                const xp: Entity = {
-                  id: `xp-${Date.now()}`,
-                  x: enemy.x,
-                  y: enemy.y,
-                  vx: (Math.random() - 0.5) * 2,
-                  vy: (Math.random() - 0.5) * 2,
-                  radius: 6,
-                  color: '#06FFB4',
-                  type: 'xp'
+                // Drop XP
+                const xpAmount = enemyType?.xpReward || 10
+                const luckBonus = state.playerStats.luck
+                
+                for (let i = 0; i < Math.ceil(xpAmount / 10); i++) {
+                  const xp: Entity = {
+                    id: `xp-${Date.now()}-${i}`,
+                    x: enemy.x + (Math.random() - 0.5) * 20,
+                    y: enemy.y + (Math.random() - 0.5) * 20,
+                    vx: (Math.random() - 0.5) * 3,
+                    vy: (Math.random() - 0.5) * 3,
+                    radius: 6 + (Math.random() < 0.1 * luckBonus ? 4 : 0),
+                    color: Math.random() < 0.1 * luckBonus ? '#FFD700' : '#06FFB4',
+                    type: 'xp'
+                  }
+                  state.addEntity(xp)
                 }
-                state.addEntity(xp)
+                
+                soundManager.playPop()
+                state.triggerScreenShake(enemy.type === 'boss' ? 20 : 5)
                 
                 state.removeEntity(enemy.id)
                 
-                const enemies = state.entities.filter(e => e.type === 'enemy').length - 1
+                // Check wave completion
+                const enemies = state.entities.filter(e => e.type === 'enemy' || e.type === 'boss').length - 1
                 if (enemies === 0) {
                   setTimeout(() => {
                     const newState = useGameStore.getState()
@@ -398,10 +490,12 @@ const Canvas: React.FC = () => {
               }
             }
             
+            // Player vs XP
             if (e1.type === 'player' && e2.type === 'xp') {
               const particles = createAbsorbParticles(e2.x, e2.y, e1.x, e1.y, e2.color, 5)
               state.addParticles(particles)
-              state.addXp(10)
+              const xpValue = e2.radius > 8 ? 50 : 10
+              state.addXp(xpValue)
               soundManager.playTone(1000, 0.05, 0.2)
               state.removeEntity(e2.id)
             }
@@ -413,6 +507,7 @@ const Canvas: React.FC = () => {
         player.damage--
       }
       
+      // Update all entities
       entities.forEach(entity => {
         state.updateEntity(entity.id, entity)
       })
@@ -420,6 +515,7 @@ const Canvas: React.FC = () => {
       state.updateParticles()
       state.updateScreenShake()
       
+      // Render particles
       state.particles.forEach(particle => {
         ctx.save()
         ctx.globalAlpha = particle.life
@@ -432,6 +528,7 @@ const Canvas: React.FC = () => {
         ctx.restore()
       })
       
+      // Render entities
       entities.forEach(entity => {
         ctx.save()
         
@@ -441,6 +538,11 @@ const Canvas: React.FC = () => {
         
         ctx.shadowColor = entity.color
         ctx.shadowBlur = entity.type === 'xp' ? 30 : 20
+        
+        if (entity.type === 'boss') {
+          ctx.shadowBlur = 40
+        }
+        
         ctx.fillStyle = entity.color
         
         ctx.beginPath()
@@ -460,12 +562,25 @@ const Canvas: React.FC = () => {
           ctx.fillRect(entity.x - 20, entity.y - 30, 40 * hpPercent, 4)
         }
         
-        if (entity.type === 'enemy') {
+        if ((entity.type === 'enemy' || entity.type === 'boss')) {
           const hpPercent = (entity.hp || 0) / (entity.maxHp || 1)
           ctx.fillStyle = 'rgba(255, 0, 110, 0.5)'
           ctx.fillRect(entity.x - entity.radius, entity.y - entity.radius - 10, entity.radius * 2, 4)
           ctx.fillStyle = '#FFBE0B'
           ctx.fillRect(entity.x - entity.radius, entity.y - entity.radius - 10, entity.radius * 2 * hpPercent, 4)
+          
+          if (entity.type === 'boss') {
+            ctx.font = 'bold 14px Arial'
+            ctx.fillStyle = '#fff'
+            ctx.textAlign = 'center'
+            ctx.fillText(bossTypes[entity.subtype!]?.name || 'BOSS', entity.x, entity.y - entity.radius - 20)
+          }
+        }
+        
+        if (entity.isCrit) {
+          ctx.strokeStyle = '#FF006E'
+          ctx.lineWidth = 2
+          ctx.stroke()
         }
         
         ctx.restore()
