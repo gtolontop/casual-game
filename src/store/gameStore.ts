@@ -137,27 +137,41 @@ export const useGameStore = create<GameState>((set, get) => ({
   setGameState: (gameState) => set({ gameState }),
   
   addXp: (amount) => set((state) => {
-    const newXp = state.xp + amount
-    if (newXp >= state.xpToNext) {
+    let newXp = state.xp + amount
+    let xpForNext = state.xpToNext
+    
+    // Check if we should level up
+    while (newXp >= xpForNext) {
+      newXp = newXp - xpForNext
       get().levelUp()
-      return { xp: newXp - state.xpToNext }
+      xpForNext = get().xpToNext
     }
+    
     return { xp: newXp }
   }),
   
-  levelUp: () => set((state) => {
+  levelUp: () => {
+    const state = get()
     const availableUpgrades = state.powerUps
       .filter(p => p.level < p.maxLevel)
       .sort(() => Math.random() - 0.5)
       .slice(0, 3)
     
-    return {
-      playerLevel: state.playerLevel + 1,
-      xpToNext: state.xpToNext + 50,
-      gameState: 'levelUp',
-      availableUpgrades
+    if (availableUpgrades.length > 0) {
+      set({
+        playerLevel: state.playerLevel + 1,
+        xpToNext: state.xpToNext + 50,
+        gameState: 'levelUp',
+        availableUpgrades
+      })
+    } else {
+      // If no upgrades available, just increase level
+      set({
+        playerLevel: state.playerLevel + 1,
+        xpToNext: state.xpToNext + 50
+      })
     }
-  }),
+  },
   
   selectUpgrade: (upgradeId) => set((state) => {
     const upgradedPowerUps = state.powerUps.map(p => 
