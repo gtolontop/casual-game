@@ -1,0 +1,91 @@
+.level-up-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(5px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+
+.level-up-container {
+  text-align: center;
+  padding: 2rem;
+  max-width: 800px;
+  width: 90%;
+}
+
+.level-up-title {
+  font-size: 3rem;
+  font-weight: 900;
+  color: #06FFB4;
+  margin-bottom: 2rem;
+  text-shadow: 0 0 30px rgba(6, 255, 180, 0.5);
+  letter-spacing: 0.1em;
+}
+
+.upgrades-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.upgrade-card {
+  background: linear-gradient(135deg, rgba(138, 56, 236, 0.1), rgba(58, 134, 255, 0.1));
+  border: 2px solid rgba(138, 56, 236, 0.5);
+  border-radius: 15px;
+  padding: 1.5rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.upgrade-card:hover {
+  background: linear-gradient(135deg, rgba(138, 56, 236, 0.2), rgba(58, 134, 255, 0.2));
+  border-color: rgba(138, 56, 236, 0.8);
+  box-shadow: 0 0 30px rgba(138, 56, 236, 0.3);
+}
+
+.upgrade-icon {
+  font-size: 3rem;
+  margin-bottom: 0.5rem;
+}
+
+.upgrade-name {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: white;
+  margin-bottom: 0.3rem;
+}
+
+.upgrade-level {
+  font-size: 0.9rem;
+  color: #FFBE0B;
+  margin-bottom: 0.5rem;
+}
+
+.upgrade-description {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.4;
+}
+
+.level-up-tip {
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.5);
+  font-style: italic;
+}
+
+@media (max-width: 768px) {
+  .level-up-title {
+    font-size: 2rem;
+  }
+  
+  .upgrades-container {
+    grid-template-columns: 1fr;
+  }
+}

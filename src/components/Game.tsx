@@ -6,6 +6,7 @@ import Canvas from './Canvas'
 import Menu from './Menu'
 import UI from './UI'
 import GameOver from './GameOver'
+import LevelUp from './LevelUp'
 import './Game.css'
 
 const Game: React.FC = () => {
