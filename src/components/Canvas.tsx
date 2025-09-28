@@ -505,6 +505,8 @@ const Canvas: React.FC = () => {
                   }, 100)
                 }
               }
+              continue
+            }
             }
             
             // Player vs XP
