@@ -35,7 +35,7 @@ const Menu: React.FC = () => {
         animate={{ scale: 1 }}
         transition={{ delay: 0.4, type: 'spring', stiffness: 200 }}
       >
-        Absorb smaller bubbles • Avoid larger ones
+        Survive waves • Collect XP • Upgrade your ship
       </motion.div>
       
       {highScore > 0 && (
