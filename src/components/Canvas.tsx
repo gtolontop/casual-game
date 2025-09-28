@@ -9,25 +9,11 @@ import './Canvas.css'
 const Canvas: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const animationRef = useRef<number>()
-  const mouseRef = useRef({ x: 0, y: 0 })
+  const mouseRef = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2 })
+  const gameInitialized = useRef(false)
   
-  const {
-    bubbles,
-    particles,
-    gameState,
-    score,
-    addBubble,
-    removeBubble,
-    updateBubble,
-    setScore,
-    setGameState,
-    incrementCombo,
-    resetCombo,
-    addParticles,
-    updateParticles,
-    triggerScreenShake,
-    updateScreenShake
-  } = useGameStore()
+  const gameState = useGameStore(state => state.gameState)
+  const score = useGameStore(state => state.score)
   
   useEffect(() => {
     const canvas = canvasRef.current
@@ -36,46 +22,84 @@ const Canvas: React.FC = () => {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     
-    canvas.width = window.innerWidth
-    canvas.height = window.innerHeight
+    const resizeCanvas = () => {
+      canvas.width = window.innerWidth
+      canvas.height = window.innerHeight
+    }
+    
+    resizeCanvas()
+    window.addEventListener('resize', resizeCanvas)
     
     if (gameState !== 'playing') {
+      gameInitialized.current = false
       ctx.fillStyle = '#0a0a0a'
       ctx.fillRect(0, 0, canvas.width, canvas.height)
-      return
-    }
-    
-    const player: Bubble = {
-      id: 'player',
-      x: canvas.width / 2,
-      y: canvas.height / 2,
-      vx: 0,
-      vy: 0,
-      radius: 30,
-      color: getColorForLevel(0),
-      level: 0,
-      isPlayer: true
-    }
-    
-    addBubble(player)
-    
-    for (let i = 0; i < 20; i++) {
-      const level = Math.floor(Math.random() * 3)
-      const bubble: Bubble = {
-        id: `bubble-${Date.now()}-${i}`,
-        x: Math.random() * canvas.width,
-        y: Math.random() * canvas.height,
-        vx: (Math.random() - 0.5) * 2,
-        vy: (Math.random() - 0.5) * 2,
-        radius: 15 + level * 5,
-        color: getColorForLevel(level),
-        level
+      return () => {
+        window.removeEventListener('resize', resizeCanvas)
       }
-      addBubble(bubble)
     }
+    
+    const {
+      bubbles,
+      particles,
+      addBubble,
+      removeBubble,
+      updateBubble,
+      setScore,
+      setGameState,
+      incrementCombo,
+      addParticles,
+      updateParticles,
+      triggerScreenShake,
+      updateScreenShake,
+      reset
+    } = useGameStore.getState()
+    
+    if (!gameInitialized.current) {
+      gameInitialized.current = true
+      reset()
+      
+      const player: Bubble = {
+        id: 'player',
+        x: canvas.width / 2,
+        y: canvas.height / 2,
+        vx: 0,
+        vy: 0,
+        radius: 30,
+        color: getColorForLevel(0),
+        level: 0,
+        isPlayer: true
+      }
+      
+      addBubble(player)
+      
+      for (let i = 0; i < 15; i++) {
+        const angle = (Math.PI * 2 * i) / 15
+        const distance = 200 + Math.random() * 200
+        const level = Math.floor(Math.random() * 3)
+        const bubble: Bubble = {
+          id: `bubble-${i}`,
+          x: canvas.width / 2 + Math.cos(angle) * distance,
+          y: canvas.height / 2 + Math.sin(angle) * distance,
+          vx: (Math.random() - 0.5) * 2,
+          vy: (Math.random() - 0.5) * 2,
+          radius: 15 + level * 5,
+          color: getColorForLevel(level),
+          level
+        }
+        addBubble(bubble)
+      }
+    }
+    
+    let lastSpawnTime = Date.now()
     
     const spawnBubble = () => {
-      if (bubbles.length < 30 && Math.random() < 0.02) {
+      const currentTime = Date.now()
+      const state = useGameStore.getState()
+      
+      if (state.bubbles.length < 25 && currentTime - lastSpawnTime > 1000) {
+        lastSpawnTime = currentTime
+        
         const side = Math.floor(Math.random() * 4)
         let x, y, vx, vy
         
@@ -105,15 +129,15 @@ const Canvas: React.FC = () => {
             vy = -1 - Math.random() * 2
         }
         
-        const level = Math.floor(Math.random() * Math.min(4, Math.floor(score / 100) + 1))
+        const level = Math.floor(Math.random() * Math.min(4, Math.floor(state.score / 100) + 1))
         const bubble: Bubble = {
-          id: `bubble-${Date.now()}-${Math.random()}`,
+          id: `bubble-${Date.now()}`,
           x, y, vx, vy,
           radius: 15 + level * 5,
           color: getColorForLevel(level),
           level
         }
-        addBubble(bubble)
+        state.addBubble(bubble)
       }
     }
     
@@ -131,12 +155,13 @@ const Canvas: React.FC = () => {
     window.addEventListener('touchmove', handleTouchMove)
     
     const gameLoop = () => {
-      if (!ctx || gameState !== 'playing') return
+      const state = useGameStore.getState()
+      if (state.gameState !== 'playing') return
       
-      ctx.fillStyle = 'rgba(10, 10, 10, 0.1)'
+      ctx.fillStyle = 'rgba(10, 10, 10, 0.2)'
       ctx.fillRect(0, 0, canvas.width, canvas.height)
       
-      const currentBubbles = [...bubbles]
+      const currentBubbles = [...state.bubbles]
       const player = currentBubbles.find(b => b.isPlayer)
       
       if (player) {
@@ -152,7 +177,7 @@ const Canvas: React.FC = () => {
         
         if (Math.abs(player.vx) > 1 || Math.abs(player.vy) > 1) {
           const trail = createTrailParticles(player.x, player.y, player.vx, player.vy, player.color)
-          if (trail.length > 0) addParticles(trail)
+          if (trail.length > 0) state.addParticles(trail)
         }
       }
       
@@ -168,7 +193,7 @@ const Canvas: React.FC = () => {
         if (!bubble.isPlayer && 
             (bubble.x < -50 || bubble.x > canvas.width + 50 || 
              bubble.y < -50 || bubble.y > canvas.height + 50)) {
-          removeBubble(bubble.id)
+          state.removeBubble(bubble.id)
         }
       })
       
@@ -184,16 +209,16 @@ const Canvas: React.FC = () => {
               
               if (player.radius > other.radius * 1.2) {
                 const particles = createAbsorbParticles(other.x, other.y, player.x, player.y, other.color)
-                addParticles(particles)
+                state.addParticles(particles)
                 
                 player.radius += other.radius * 0.2
-                setScore(score + (other.level + 1) * 10)
-                incrementCombo()
+                state.setScore(state.score + (other.level + 1) * 10)
+                state.incrementCombo()
                 
                 soundManager.playPop(other.radius / 20)
-                triggerScreenShake(5)
+                state.triggerScreenShake(5)
                 
-                removeBubble(other.id)
+                state.removeBubble(other.id)
                 
                 if (player.radius > 40 && player.level < 9) {
                   player.level++
@@ -201,13 +226,13 @@ const Canvas: React.FC = () => {
                   player.radius = 30 + player.level * 5
                   
                   const explosion = createExplosionParticles(player.x, player.y, player.color, 30)
-                  addParticles(explosion)
+                  state.addParticles(explosion)
                   soundManager.playMerge(player.level)
-                  triggerScreenShake(10)
+                  state.triggerScreenShake(10)
                 }
               } else if (other.radius > player.radius * 1.5) {
                 soundManager.playGameOver()
-                setGameState('gameOver')
+                state.setGameState('gameOver')
                 return
               } else {
                 resolveCollision(b1, b2)
@@ -219,10 +244,10 @@ const Canvas: React.FC = () => {
                 const newY = (b1.y + b2.y) / 2
                 
                 const particles = createExplosionParticles(newX, newY, b1.color, 15)
-                addParticles(particles)
+                state.addParticles(particles)
                 
-                removeBubble(b1.id)
-                removeBubble(b2.id)
+                state.removeBubble(b1.id)
+                state.removeBubble(b2.id)
                 
                 if (b1.level < 8) {
                   const merged: Bubble = {
@@ -235,7 +260,7 @@ const Canvas: React.FC = () => {
                     level: b1.level + 1,
                     color: getColorForLevel(b1.level + 1)
                   }
-                  addBubble(merged)
+                  state.addBubble(merged)
                   soundManager.playMerge(merged.level)
                 }
               } else {
@@ -246,10 +271,14 @@ const Canvas: React.FC = () => {
         }
       }
       
-      updateParticles()
-      updateScreenShake()
+      currentBubbles.forEach(bubble => {
+        state.updateBubble(bubble.id, bubble)
+      })
       
-      particles.forEach(particle => {
+      state.updateParticles()
+      state.updateScreenShake()
+      
+      state.particles.forEach(particle => {
         ctx.save()
         ctx.globalAlpha = particle.life
         ctx.fillStyle = particle.color
@@ -260,8 +289,6 @@ const Canvas: React.FC = () => {
       })
       
       currentBubbles.forEach(bubble => {
-        updateBubble(bubble.id, bubble)
-        
         ctx.save()
         ctx.shadowColor = bubble.color
         ctx.shadowBlur = 20
@@ -299,13 +326,14 @@ const Canvas: React.FC = () => {
     animationRef.current = requestAnimationFrame(gameLoop)
     
     return () => {
+      window.removeEventListener('resize', resizeCanvas)
       window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('touchmove', handleTouchMove)
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current)
       }
     }
-  }, [gameState, bubbles, particles, score, addBubble, removeBubble, updateBubble, setScore, setGameState, incrementCombo, addParticles, updateParticles, triggerScreenShake, updateScreenShake])
+  }, [gameState])
   
   return <canvas ref={canvasRef} className="game-canvas" />
 }
