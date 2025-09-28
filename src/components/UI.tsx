@@ -4,8 +4,9 @@ import { useGameStore } from '../store/gameStore'
 import './UI.css'
 
 const UI: React.FC = () => {
-  const { score, wave, xp, xpToNext, playerLevel, entities, powerUps, playerStats } = useGameStore()
+  const { score, wave, xp, xpToNext, playerLevel, entities, powerUps, playerStats, currentWeapon, unlockedWeapons } = useGameStore()
   const player = entities.find(e => e.type === 'player')
+  const boss = entities.find(e => e.type === 'boss')
   const activePowerUps = powerUps.filter(p => p.level > 0)
   
   return (
