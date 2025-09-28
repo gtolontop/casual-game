@@ -7,8 +7,10 @@ export const createExplosionParticles = (
   count: number = 20
 ): Particle[] => {
   const particles: Particle[] = []
+  // Reduce particle count for performance
+  const actualCount = Math.min(count, 15)
   
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < actualCount; i++) {
     const angle = (Math.PI * 2 * i) / count
     const speed = 2 + Math.random() * 5
     particles.push({

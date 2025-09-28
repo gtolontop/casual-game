@@ -184,6 +184,16 @@ const Canvas: React.FC = () => {
       ctx.fillStyle = 'rgba(10, 10, 10, 0.3)'
       ctx.fillRect(0, 0, canvas.width, canvas.height)
       
+      // Limit projectiles to prevent lag
+      const projectiles = state.entities.filter(e => e.type === 'projectile').length
+      if (projectiles > 40) {
+        const oldestProjectiles = state.entities
+          .filter(e => e.type === 'projectile')
+          .sort((a, b) => (a.lifetime || 0) - (b.lifetime || 0))
+          .slice(0, 5)
+        oldestProjectiles.forEach(p => state.removeEntity(p.id))
+      }
+      
       const entities = [...state.entities]
       const player = entities.find(e => e.type === 'player')
       
@@ -498,14 +508,20 @@ const Canvas: React.FC = () => {
                 state.removeEntity(enemy.id)
                 
                 // Check wave completion
-                const enemies = state.entities.filter(e => e.type === 'enemy' || e.type === 'boss').length - 1
-                if (enemies === 0) {
+                const remainingEnemies = state.entities.filter(e => (e.type === 'enemy' || e.type === 'boss') && e.id !== enemy.id).length
+                if (remainingEnemies === 0) {
+                  // Small delay to prevent double wave increment
                   setTimeout(() => {
                     const newState = useGameStore.getState()
-                    newState.wave = state.wave + 1
-                    newState.triggerScreenShake(20)
-                    soundManager.playMerge(newState.wave)
-                  }, 100)
+                    const currentEnemies = newState.entities.filter(e => e.type === 'enemy' || e.type === 'boss').length
+                    if (currentEnemies === 0) {
+                      const newWave = newState.wave + 1
+                      // Update state directly to avoid race conditions
+                      useGameStore.setState({ wave: newWave })
+                      newState.triggerScreenShake(20)
+                      soundManager.playMerge(newWave)
+                    }
+                  }, 500)
                 }
               }
               continue
@@ -537,13 +553,13 @@ const Canvas: React.FC = () => {
       state.updateParticles()
       state.updateScreenShake()
       
-      // Render particles
-      state.particles.forEach(particle => {
+      // Render particles (limited for performance)
+      const particlesToRender = state.particles.slice(-100)
+      particlesToRender.forEach(particle => {
         ctx.save()
         ctx.globalAlpha = particle.life
         ctx.fillStyle = particle.color
-        ctx.shadowBlur = 10
-        ctx.shadowColor = particle.color
+        // No shadows for particles for performance
         ctx.beginPath()
         ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2)
         ctx.fill()
@@ -558,11 +574,10 @@ const Canvas: React.FC = () => {
           ctx.globalAlpha = 0.3
         }
         
-        ctx.shadowColor = entity.color
-        ctx.shadowBlur = entity.type === 'xp' ? 30 : 20
-        
-        if (entity.type === 'boss') {
-          ctx.shadowBlur = 40
+        // Disable shadows for performance
+        if (entity.type === 'boss' || entity.type === 'xp') {
+          ctx.shadowColor = entity.color
+          ctx.shadowBlur = entity.type === 'boss' ? 30 : 20
         }
         
         ctx.fillStyle = entity.color
