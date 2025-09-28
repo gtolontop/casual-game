@@ -165,19 +165,36 @@ export const useGameStore = create<GameState>((set, get) => ({
     )
     
     let newStats = { ...state.playerStats }
+    const player = state.entities.find(e => e.type === 'player')
     
     switch(upgradeId) {
       case 'damage':
-        newStats.damage *= 1.2
+        newStats.damage = Math.round(newStats.damage * 1.2)
         break
       case 'speed':
-        newStats.moveSpeed *= 1.15
+        newStats.moveSpeed = newStats.moveSpeed * 1.15
         break
       case 'hp':
         newStats.maxHp += 25
+        if (player) {
+          player.maxHp = newStats.maxHp
+          player.hp = Math.min((player.hp || 0) + 25, newStats.maxHp)
+        }
         break
       case 'firerate':
-        newStats.fireRate *= 1.2
+        newStats.fireRate = newStats.fireRate * 1.2
+        break
+      case 'multishot':
+        // Handled in shooting logic
+        break
+      case 'lifesteal':
+        // Will add healing on kill
+        break
+      case 'explosive':
+        // Will add explosion damage
+        break
+      case 'shield':
+        // Will add periodic immunity
         break
     }
     
@@ -185,7 +202,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       powerUps: upgradedPowerUps,
       playerStats: newStats,
       gameState: 'playing',
-      availableUpgrades: []
+      availableUpgrades: [],
+      entities: player ? state.entities.map(e => e.id === 'player' ? player : e) : state.entities
     }
   }),
   
