@@ -53,6 +53,7 @@ const Game: React.FC = () => {
           {gameState === 'playing' && <UI key="ui" />}
           {gameState === 'gameOver' && <GameOver key="gameover" />}
           {gameState === 'levelUp' && <LevelUp key="levelup" />}
+          {gameState === 'bossWarning' && <BossWarning key="bosswarning" />}
         </AnimatePresence>
       </motion.div>
     </div>
