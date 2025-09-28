@@ -1,0 +1,70 @@
+.menu {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: white;
+  z-index: 10;
+}
+
+.menu-title {
+  font-size: 5rem;
+  font-weight: 900;
+  margin-bottom: 1rem;
+  letter-spacing: -0.05em;
+  background: linear-gradient(135deg, #FF006E 0%, #8338EC 50%, #3A86FF 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: 0 0 60px rgba(138, 56, 236, 0.5);
+}
+
+.menu-subtitle {
+  font-size: 1.2rem;
+  margin-bottom: 2rem;
+  opacity: 0.8;
+  letter-spacing: 0.05em;
+}
+
+.high-score {
+  font-size: 1.5rem;
+  margin-bottom: 2rem;
+  color: #FFBE0B;
+  font-weight: 600;
+}
+
+.play-button {
+  padding: 1.5rem 4rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  border: none;
+  border-radius: 50px;
+  background: linear-gradient(135deg, #FF006E, #8338EC);
+  color: white;
+  cursor: pointer;
+  box-shadow: 0 10px 30px rgba(138, 56, 236, 0.3);
+  transition: all 0.3s ease;
+  letter-spacing: 0.1em;
+}
+
+.play-button:hover {
+  box-shadow: 0 15px 40px rgba(138, 56, 236, 0.4);
+}
+
+.controls-info {
+  margin-top: 3rem;
+  font-size: 1rem;
+  opacity: 0.6;
+}
+
+@media (max-width: 768px) {
+  .menu-title {
+    font-size: 3rem;
+  }
+  
+  .play-button {
+    padding: 1rem 3rem;
+    font-size: 1.2rem;
+  }
+}
