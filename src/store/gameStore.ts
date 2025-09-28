@@ -12,10 +12,13 @@ export interface Entity {
   maxHp?: number
   damage?: number
   speed?: number
-  type: 'player' | 'enemy' | 'xp' | 'powerup' | 'projectile'
+  type: 'player' | 'enemy' | 'xp' | 'powerup' | 'projectile' | 'boss'
   subtype?: string
   lifetime?: number
   target?: { x: number; y: number }
+  pattern?: string
+  attackCooldown?: number
+  isCrit?: boolean
 }
 
 export interface PowerUp {
@@ -25,13 +28,25 @@ export interface PowerUp {
   icon: string
   level: number
   maxLevel: number
+  rarity?: 'common' | 'rare' | 'epic' | 'legendary'
+}
+
+export interface Weapon {
+  id: string
+  name: string
+  damage: number
+  fireRate: number
+  projectileSpeed: number
+  pattern: 'single' | 'spread' | 'burst' | 'beam' | 'orbit' | 'homing'
+  projectileCount: number
+  icon: string
 }
 
 interface GameState {
   entities: Entity[]
   score: number
   highScore: number
-  gameState: 'menu' | 'playing' | 'gameOver' | 'levelUp'
+  gameState: 'menu' | 'playing' | 'gameOver' | 'levelUp' | 'bossWarning'
   wave: number
   xp: number
   xpToNext: number
@@ -41,6 +56,8 @@ interface GameState {
   screenShake: number
   powerUps: PowerUp[]
   availableUpgrades: PowerUp[]
+  currentWeapon: Weapon
+  unlockedWeapons: Weapon[]
   playerStats: {
     maxHp: number
     moveSpeed: number
@@ -49,16 +66,21 @@ interface GameState {
     projectileSpeed: number
     pickupRange: number
     critChance: number
+    critDamage: number
+    luck: number
+    dodge: number
+    armor: number
   }
   
   addEntity: (entity: Entity) => void
   removeEntity: (id: string) => void
   updateEntity: (id: string, updates: Partial<Entity>) => void
   setScore: (score: number) => void
-  setGameState: (state: 'menu' | 'playing' | 'gameOver' | 'levelUp') => void
+  setGameState: (state: 'menu' | 'playing' | 'gameOver' | 'levelUp' | 'bossWarning') => void
   addXp: (amount: number) => void
   levelUp: () => void
   selectUpgrade: (upgradeId: string) => void
+  switchWeapon: (weaponId: string) => void
   incrementCombo: () => void
   resetCombo: () => void
   addParticles: (particles: Particle[]) => void
@@ -76,18 +98,42 @@ export interface Particle {
   life: number
   size: number
   color: string
-  type?: 'damage' | 'heal' | 'xp'
+  type?: 'damage' | 'heal' | 'xp' | 'crit'
 }
 
+const weapons: Weapon[] = [
+  { id: 'pistol', name: 'Plasma Pistol', damage: 10, fireRate: 2, projectileSpeed: 8, pattern: 'single', projectileCount: 1, icon: '🔫' },
+  { id: 'shotgun', name: 'Void Shotgun', damage: 5, fireRate: 1.5, projectileSpeed: 7, pattern: 'spread', projectileCount: 5, icon: '🔨' },
+  { id: 'rifle', name: 'Laser Rifle', damage: 15, fireRate: 4, projectileSpeed: 12, pattern: 'burst', projectileCount: 3, icon: '⚡' },
+  { id: 'cannon', name: 'Ion Cannon', damage: 50, fireRate: 0.5, projectileSpeed: 6, pattern: 'single', projectileCount: 1, icon: '💥' },
+  { id: 'beam', name: 'Death Beam', damage: 5, fireRate: 10, projectileSpeed: 20, pattern: 'beam', projectileCount: 1, icon: '🌟' },
+  { id: 'orb', name: 'Orbital Spheres', damage: 8, fireRate: 3, projectileSpeed: 5, pattern: 'orbit', projectileCount: 4, icon: '🌀' }
+]
+
 const initialPowerUps: PowerUp[] = [
-  { id: 'damage', name: 'Damage Up', description: '+20% damage', icon: '⚔️', level: 0, maxLevel: 5 },
-  { id: 'speed', name: 'Speed Up', description: '+15% movement speed', icon: '👟', level: 0, maxLevel: 5 },
-  { id: 'hp', name: 'Max HP', description: '+25 max health', icon: '❤️', level: 0, maxLevel: 5 },
-  { id: 'firerate', name: 'Fire Rate', description: '+20% attack speed', icon: '🔥', level: 0, maxLevel: 5 },
-  { id: 'multishot', name: 'Multishot', description: 'Fire additional projectiles', icon: '💫', level: 0, maxLevel: 3 },
-  { id: 'lifesteal', name: 'Lifesteal', description: 'Heal on enemy kill', icon: '🩸', level: 0, maxLevel: 3 },
-  { id: 'explosive', name: 'Explosive Shots', description: 'Projectiles explode on impact', icon: '💥', level: 0, maxLevel: 3 },
-  { id: 'shield', name: 'Shield', description: 'Periodic damage immunity', icon: '🛡️', level: 0, maxLevel: 3 }
+  // Common
+  { id: 'damage', name: 'Damage Up', description: '+20% damage', icon: '⚔️', level: 0, maxLevel: 10, rarity: 'common' },
+  { id: 'speed', name: 'Speed Up', description: '+15% movement speed', icon: '👟', level: 0, maxLevel: 8, rarity: 'common' },
+  { id: 'hp', name: 'Max HP', description: '+25 max health', icon: '❤️', level: 0, maxLevel: 10, rarity: 'common' },
+  { id: 'firerate', name: 'Fire Rate', description: '+20% attack speed', icon: '🔥', level: 0, maxLevel: 8, rarity: 'common' },
+  
+  // Rare
+  { id: 'multishot', name: 'Multishot', description: 'Fire additional projectiles', icon: '💫', level: 0, maxLevel: 5, rarity: 'rare' },
+  { id: 'lifesteal', name: 'Lifesteal', description: 'Heal on enemy kill', icon: '🩸', level: 0, maxLevel: 5, rarity: 'rare' },
+  { id: 'crit', name: 'Critical Strike', description: '+10% crit chance', icon: '⚡', level: 0, maxLevel: 5, rarity: 'rare' },
+  { id: 'dodge', name: 'Evasion', description: '+5% dodge chance', icon: '💨', level: 0, maxLevel: 5, rarity: 'rare' },
+  
+  // Epic
+  { id: 'explosive', name: 'Explosive Shots', description: 'Projectiles explode on impact', icon: '💥', level: 0, maxLevel: 3, rarity: 'epic' },
+  { id: 'shield', name: 'Shield', description: 'Periodic damage immunity', icon: '🛡️', level: 0, maxLevel: 3, rarity: 'epic' },
+  { id: 'luck', name: 'Lucky Charm', description: '+20% rare drop chance', icon: '🍀', level: 0, maxLevel: 3, rarity: 'epic' },
+  { id: 'vampire', name: 'Vampirism', description: '2% lifesteal on all damage', icon: '🦇', level: 0, maxLevel: 3, rarity: 'epic' },
+  
+  // Legendary
+  { id: 'berserk', name: 'Berserker Mode', description: 'Double damage when < 30% HP', icon: '👹', level: 0, maxLevel: 1, rarity: 'legendary' },
+  { id: 'time', name: 'Time Dilation', description: 'Enemies move 30% slower', icon: '⏱️', level: 0, maxLevel: 1, rarity: 'legendary' },
+  { id: 'double', name: 'Double Tap', description: '25% chance to shoot twice', icon: '✌️', level: 0, maxLevel: 1, rarity: 'legendary' },
+  { id: 'nuke', name: 'Nuclear Option', description: 'Clear screen every 100 kills', icon: '☢️', level: 0, maxLevel: 1, rarity: 'legendary' }
 ]
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -104,6 +150,8 @@ export const useGameStore = create<GameState>((set, get) => ({
   screenShake: 0,
   powerUps: [...initialPowerUps],
   availableUpgrades: [],
+  currentWeapon: weapons[0],
+  unlockedWeapons: [weapons[0]],
   playerStats: {
     maxHp: 100,
     moveSpeed: 5,
@@ -111,7 +159,11 @@ export const useGameStore = create<GameState>((set, get) => ({
     damage: 10,
     projectileSpeed: 8,
     pickupRange: 50,
-    critChance: 0.1
+    critChance: 0.1,
+    critDamage: 2,
+    luck: 1,
+    dodge: 0,
+    armor: 0
   },
   
   addEntity: (entity) => set((state) => ({ 
@@ -140,7 +192,6 @@ export const useGameStore = create<GameState>((set, get) => ({
     let newXp = state.xp + amount
     let xpForNext = state.xpToNext
     
-    // Check if we should level up
     while (newXp >= xpForNext) {
       newXp = newXp - xpForNext
       get().levelUp()
@@ -152,23 +203,59 @@ export const useGameStore = create<GameState>((set, get) => ({
   
   levelUp: () => {
     const state = get()
-    const availableUpgrades = state.powerUps
-      .filter(p => p.level < p.maxLevel)
-      .sort(() => Math.random() - 0.5)
-      .slice(0, 3)
     
-    if (availableUpgrades.length > 0) {
+    // Weighted random based on rarity and luck
+    const rollUpgrade = () => {
+      const roll = Math.random() * 100
+      const luckBonus = state.playerStats.luck * 5
+      
+      if (roll < 5 + luckBonus) return 'legendary'
+      if (roll < 20 + luckBonus) return 'epic'
+      if (roll < 50 + luckBonus) return 'rare'
+      return 'common'
+    }
+    
+    // Get 3 upgrades with at least one guaranteed rare+
+    const upgrades = []
+    const rarities = ['rare', rollUpgrade(), rollUpgrade()]
+    
+    rarities.forEach(rarity => {
+      const available = state.powerUps.filter(p => 
+        p.level < p.maxLevel && p.rarity === rarity
+      )
+      if (available.length > 0) {
+        const upgrade = available[Math.floor(Math.random() * available.length)]
+        if (!upgrades.find(u => u.id === upgrade.id)) {
+          upgrades.push(upgrade)
+        }
+      }
+    })
+    
+    // Fill with commons if needed
+    while (upgrades.length < 3) {
+      const commons = state.powerUps.filter(p => 
+        p.level < p.maxLevel && !upgrades.find(u => u.id === p.id)
+      )
+      if (commons.length > 0) {
+        upgrades.push(commons[Math.floor(Math.random() * commons.length)])
+      } else break
+    }
+    
+    // Weapon unlock every 5 levels
+    if (state.playerLevel % 5 === 4 && state.unlockedWeapons.length < weapons.length) {
+      const locked = weapons.filter(w => !state.unlockedWeapons.find(uw => uw.id === w.id))
+      if (locked.length > 0) {
+        const newWeapon = locked[Math.floor(Math.random() * locked.length)]
+        set({ unlockedWeapons: [...state.unlockedWeapons, newWeapon] })
+      }
+    }
+    
+    if (upgrades.length > 0) {
       set({
         playerLevel: state.playerLevel + 1,
         xpToNext: state.xpToNext + 50,
         gameState: 'levelUp',
-        availableUpgrades
-      })
-    } else {
-      // If no upgrades available, just increase level
-      set({
-        playerLevel: state.playerLevel + 1,
-        xpToNext: state.xpToNext + 50
+        availableUpgrades: upgrades
       })
     }
   },
@@ -180,6 +267,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     
     let newStats = { ...state.playerStats }
     const player = state.entities.find(e => e.type === 'player')
+    const weapon = state.currentWeapon
     
     switch(upgradeId) {
       case 'damage':
@@ -198,18 +286,21 @@ export const useGameStore = create<GameState>((set, get) => ({
       case 'firerate':
         newStats.fireRate = newStats.fireRate * 1.2
         break
-      case 'multishot':
-        // Handled in shooting logic
+      case 'crit':
+        newStats.critChance += 0.1
         break
-      case 'lifesteal':
-        // Will add healing on kill
+      case 'dodge':
+        newStats.dodge += 0.05
         break
-      case 'explosive':
-        // Will add explosion damage
+      case 'luck':
+        newStats.luck += 0.2
         break
-      case 'shield':
-        // Will add periodic immunity
-        break
+    }
+    
+    // Update weapon stats
+    if (weapon) {
+      weapon.damage = newStats.damage
+      weapon.fireRate = newStats.fireRate
     }
     
     return {
@@ -217,8 +308,23 @@ export const useGameStore = create<GameState>((set, get) => ({
       playerStats: newStats,
       gameState: 'playing',
       availableUpgrades: [],
+      currentWeapon: weapon,
       entities: player ? state.entities.map(e => e.id === 'player' ? player : e) : state.entities
     }
+  }),
+  
+  switchWeapon: (weaponId) => set((state) => {
+    const weapon = state.unlockedWeapons.find(w => w.id === weaponId)
+    if (weapon) {
+      return { 
+        currentWeapon: {
+          ...weapon,
+          damage: state.playerStats.damage,
+          fireRate: state.playerStats.fireRate
+        }
+      }
+    }
+    return {}
   }),
   
   incrementCombo: () => set((state) => ({ combo: state.combo + 1 })),
@@ -259,6 +365,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     screenShake: 0,
     powerUps: [...initialPowerUps],
     availableUpgrades: [],
+    currentWeapon: weapons[0],
+    unlockedWeapons: [weapons[0]],
     playerStats: {
       maxHp: 100,
       moveSpeed: 5,
@@ -266,7 +374,11 @@ export const useGameStore = create<GameState>((set, get) => ({
       damage: 10,
       projectileSpeed: 8,
       pickupRange: 50,
-      critChance: 0.1
+      critChance: 0.1,
+      critDamage: 2,
+      luck: 1,
+      dodge: 0,
+      armor: 0
     }
   })
 }))
