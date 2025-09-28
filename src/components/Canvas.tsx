@@ -30,14 +30,20 @@ const Canvas: React.FC = () => {
   } = useGameStore()
   
   useEffect(() => {
-    if (gameState !== 'playing' || !canvasRef.current) return
-    
     const canvas = canvasRef.current
+    if (!canvas) return
+    
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     
     canvas.width = window.innerWidth
     canvas.height = window.innerHeight
+    
+    if (gameState !== 'playing') {
+      ctx.fillStyle = '#0a0a0a'
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      return
+    }
     
     const player: Bubble = {
       id: 'player',
@@ -299,7 +305,7 @@ const Canvas: React.FC = () => {
         cancelAnimationFrame(animationRef.current)
       }
     }
-  }, [gameState])
+  }, [gameState, bubbles, particles, score, addBubble, removeBubble, updateBubble, setScore, setGameState, incrementCombo, addParticles, updateParticles, triggerScreenShake, updateScreenShake])
   
   return <canvas ref={canvasRef} className="game-canvas" />
 }
